@@ -84,21 +84,67 @@ typedef struct {                // an automaton consists of
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
 int mygetchar(void);            // getchar() that skips carriage returns
 
+/* FUNCTION DECLARATIONS -----------------------------------------------------*/
+
+char* read_statement(char *str, int *state_len);
+
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
 int main(int argc, char *argv[]) {
-    // Message from Artem: The proposed in this skeleton file #define's,
-    // typedef's, and struct's are the subsets of those from my sample solution
-    // to this assignment. You can decide to use them in your program, or if
-    // you find them confusing, you can remove them and implement your solution
-    // from scratch. I will share my sample solution with you at the end of
-    // the subject.
+    
+    /*============================= STAGE 0 ==================================*/
+
+    // Assign initial string for current statement
+    char curr_char;
+    int statement_len;
+    char *input = (char*)malloc(sizeof(char));
+    input = read_statement(input, &statement_len);
+    input[statement_len - 1] = '\0';
+    printf("Read statement: %s    length: %d\n", input, statement_len);
+
+    // Free and destroy curr_statement pointer
+    free(input);
+    input = NULL;
+    /*=========================== END STAGE 0 ================================*/
+
+
+
+
     return EXIT_SUCCESS;        // algorithms are fun!!!
+}
+
+/* Reads from stdin character by character to dynamically sized character array
+   Parameters: `str` - char* to heap memory
+   Returns:    `str` - char* to (potentially different) heap memory addr
+*/
+char* read_statement(char *str, int *state_len) {
+
+    char curr_char;
+    int curr_statement_len = 0, buffer_len = 1;
+    // Read input statements from user
+    while((curr_char = mygetchar()) != EOF) {
+        
+        // If the end of the buffer is reached, reallocate memory
+        if(curr_statement_len >= buffer_len) {
+            // Double `buffer_len` to maintain linear time-complexity
+            buffer_len *= 2;
+            str = (char*)realloc(str, sizeof(char) * buffer_len);
+        }
+
+        // Now we know the next character will fit in the buffer, write to it.
+        str[curr_statement_len] = curr_char;
+
+        // Increment length
+        curr_statement_len++;
+    }
+    // Update `statement_length` (ignoring linebreak) and return pointer to string
+    *state_len = curr_statement_len-1;
+    return str;
 }
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
 
-// An improved version of getchar(); skips carriage return characters.
-// NB: Adapted version of the mygetchar() function by Alistair Moffat
+/*An improved version of getchar(); skips carriage return characters.
+ NB: Adapted version of the mygetchar() function by Alistair Moffat */ 
 int mygetchar() {
     int c;
     while ((c=getchar())==CRTRNC);
