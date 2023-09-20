@@ -87,11 +87,13 @@ int mygetchar(void);            // getchar() that skips carriage returns
 /* FUNCTION DECLARATIONS -----------------------------------------------------*/
 
 char* read_statement(char *str, int *state_len);
-void insert_list(automaton_t *model, char *statement);
-void init_state(state_t *new_state);
+void insert_statement(automaton_t *model, char *statement, int statement_len);
+list_t* create_list(char* str, int str_len);
+void free_list(list_t *list);
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
-int main(int argc, char *argv[]) {
+int
+main(int argc, char *argv[]) {
     
     // Initialise model
     automaton_t model;
@@ -99,23 +101,23 @@ int main(int argc, char *argv[]) {
     init_state->freq = 0;
     init_state->id=0;
     init_state->visited=0;
+    model.ini = init_state;
 
     /*============================= STAGE 0 ==================================*/
 
     // Assign initial string for current statement
     char curr_char;
-    int statement_len;
+    int statement_len = 1;
     char *input;
 
     // Read statements until blank line is read
-    while(statement_len != 0) {
+    while(statement_len > 0) {
         // Read statement from user into `input`
         input = (char*)malloc(sizeof(char));
         input = read_statement(input, &statement_len);
 
         // Add statement into automaton `model`
-
-
+        
         // Free curr_statement pointer
         free(input);
     }
@@ -133,12 +135,13 @@ int main(int argc, char *argv[]) {
    Parameters: `str` - char* to heap memory
    Returns:    `str` - char* to (potentially different) heap memory addr
 */
-char* read_statement(char *str, int *state_len) {
+char*
+read_statement(char *str, int *state_len) {
 
     char curr_char;
     int curr_statement_len = 0, buffer_len = 1;
     // Read input statements from user
-    while((curr_char = mygetchar()) != EOF) {
+    while((curr_char = mygetchar()) != '\n') {
         
         // If the end of the buffer is reached, reallocate memory
         if(curr_statement_len >= buffer_len) {
@@ -154,13 +157,69 @@ char* read_statement(char *str, int *state_len) {
         curr_statement_len++;
     }
     // Update `statement_length` and return pointer to string
-    *state_len = curr_statement_len-1;
+    *state_len = curr_statement_len;
     return str;
 }
-/* Initialises a state in the model 
+
+/* Creates a dynamic linked list for a given string - attributing an automata
+   state to each node in the list.
+   Params: `str` string to be turned into a list
+           `str_len' the length of the string
 */
-void init_state(state_t *new_state) {
-    
+list_t*
+create_list(char* str, int str_len) {
+    static int next_id=1;
+    // Allocate memory for a list
+    list_t* list = (list_t*)malloc(sizeof(list_t));
+    state_t *new_state;
+    node_t *new_node;
+    // Error allocating list
+    assert(list != NULL);
+
+    int i;
+    // Iterate through each char of the input string and 'insert at foot'
+    for(i=0; i<str_len; i++) {
+        new_state = (state_t*)malloc(sizeof(state_t));
+        new_node = (node_t*)malloc(sizeof(node_t));
+        // Initialise values of new node
+        new_node->state;
+        new_node->next = NULL;
+        //new_node->str = 
+        // Initialise values of state reached by node
+        new_state->freq = 0;
+        new_state->id = next_id;
+        new_state->visited = 0;
+        new_state->outputs = NULL;
+
+        new_node->state = new_state;
+
+        next_id++;
+
+        if(list->head == NULL) {
+            // Append first node
+            list->head = list->tail = new_node;
+        } else {
+            list->tail->next = new_node;
+            list->tail = new_node;
+        }
+    }
+
+    return list;
+}
+
+/* Frees all allocated memory in a linked list (based on listops implementation)
+*/
+void
+free_list(list_t *list) {
+    node_t *curr, *prev;
+	assert(list!=NULL);
+	curr = list->head;
+	while (curr) {
+		prev = curr;
+		curr = curr->next;
+		free(prev);
+	}
+	free(list);
 }
 
 /* Takes a training statement and inserts it into the automaton, creating states
@@ -169,12 +228,11 @@ void init_state(state_t *new_state) {
                `char *statement` the string statement to be inserted
    Returns: void
 */
-void insert_list(automaton_t *model, char *statement) {
-    static int next_id=1;
-    model->nid = next_id;
-
-
-    next_id++;
+void
+insert_statement(automaton_t *model, char *statement, int statement_len) {
+    
+    
+    
 }
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
@@ -182,7 +240,8 @@ void insert_list(automaton_t *model, char *statement) {
 /* An improved version of getchar(); skips carriage return characters.
    NB: Adapted version of the mygetchar() function by Alistair Moffat 
 */ 
-int mygetchar() {
+int
+mygetchar() {
     int c;
     while ((c=getchar())==CRTRNC);
     return c;
