@@ -87,6 +87,7 @@ int mygetchar(void);            // getchar() that skips carriage returns
 /* FUNCTION DECLARATIONS -----------------------------------------------------*/
 
 char* read_statement(char *str, int *state_len);
+void init_state(state_t *new, int id);
 void insert_statement(automaton_t *model, char *statement, int statement_len);
 list_t* create_list(char* str, int str_len);
 void free_list(list_t *list);
@@ -110,18 +111,36 @@ main(int argc, char *argv[]) {
     int statement_len = 1;
     char *input;
 
+    // Read statement from user into `input`
+    input = (char*)malloc(sizeof(char));
+    assert(input!=NULL);
+    input = read_statement(input, &statement_len);
+
+    list_t *curr_list;
     // Read statements until blank line is read
     while(statement_len > 0) {
-        // Read statement from user into `input`
-        input = (char*)malloc(sizeof(char));
-        input = read_statement(input, &statement_len);
 
         // Add statement into automaton `model`
-        
-        // Free curr_statement pointer
+        curr_list = create_list(input, statement_len);
+        free_list(curr_list);
+
+        // Free previous input pointer
         free(input);
+
+        // Read statement from user into `input`
+        input = (char*)malloc(sizeof(char));
+        assert(input!=NULL);
+        input = read_statement(input, &statement_len);
+
+
+
+
+        
     }
     // Destroy input pointer if it's not to be reassigned.
+    if(input!=NULL) {
+        free(input);
+    }
     input = NULL;
     /*=========================== END STAGE 0 ================================*/
     
@@ -141,7 +160,7 @@ read_statement(char *str, int *state_len) {
     char curr_char;
     int curr_statement_len = 0, buffer_len = 1;
     // Read input statements from user
-    while((curr_char = mygetchar()) != '\n') {
+    while((curr_char = mygetchar()) != '\n' && curr_char != EOF) {
         
         // If the end of the buffer is reached, reallocate memory
         if(curr_statement_len >= buffer_len) {
@@ -161,44 +180,63 @@ read_statement(char *str, int *state_len) {
     return str;
 }
 
+/* Initialises an empty automata state
+   Parameters: `new` state_t pointer to new state
+               `id` int id to assign to the state
+   Returns: void
+*/
+void init_state(state_t *new, int id) {
+    new->freq = 0;
+    new->id = id;
+    new->visited = 0;
+    new->outputs = NULL;
+}
+
 /* Creates a dynamic linked list for a given string - attributing an automata
    state to each node in the list.
-   Params: `str` string to be turned into a list
-           `str_len' the length of the string
+   Parameters: `str` string to be turned into a list
+           `str_len` the length of the string
+   Returns: list_t pointer to `list`
 */
 list_t*
 create_list(char* str, int str_len) {
     static int next_id=1;
     // Allocate memory for a list
     list_t* list = (list_t*)malloc(sizeof(list_t));
+    assert(list != NULL);
+    list->head = NULL;
+    list->tail = NULL;
+
     state_t *new_state;
     node_t *new_node;
-    // Error allocating list
-    assert(list != NULL);
+    char* transition_str;
 
     int i;
     // Iterate through each char of the input string and 'insert at foot'
     for(i=0; i<str_len; i++) {
+        // Create state for each character
         new_state = (state_t*)malloc(sizeof(state_t));
         new_node = (node_t*)malloc(sizeof(node_t));
+        transition_str = (char*)malloc(sizeof(char));
+
+        // Assign the transition character to the transition node
+        *transition_str = str[i];
+
         // Initialise values of new node
         new_node->state;
         new_node->next = NULL;
-        //new_node->str = 
+        new_node->str = transition_str;
+
         // Initialise values of state reached by node
-        new_state->freq = 0;
-        new_state->id = next_id;
-        new_state->visited = 0;
-        new_state->outputs = NULL;
-
+        init_state(new_state, next_id);
         new_node->state = new_state;
-
         next_id++;
-
+        printf("Creating node str(%c) - leads to: state with id: %d\n", *(new_node->str), new_state->id);
         if(list->head == NULL) {
             // Append first node
             list->head = list->tail = new_node;
         } else {
+            // Append subsequent nodes
             list->tail->next = new_node;
             list->tail = new_node;
         }
@@ -214,10 +252,15 @@ free_list(list_t *list) {
     node_t *curr, *prev;
 	assert(list!=NULL);
 	curr = list->head;
+
 	while (curr) {
+        printf("Freeing \n");
 		prev = curr;
 		curr = curr->next;
+        free(prev->state);
+        free(prev->str);
 		free(prev);
+        
 	}
 	free(list);
 }
