@@ -335,14 +335,27 @@ insert_statement(automaton_t *model, char *statement, int statement_len) {
     printf("Inserting statement to model\n");
     // Traverse through current model - starting with ini state
     state_t *curr_state = model->ini;
-    list_t *new_list, *curr_list;
+    list_t *new_list, curr_list;
+    node_t *curr_node;
+    // If there is no initial list in the model, immediately add list and return
+    if(curr_state->outputs==NULL) {
+        new_list = create_list(statement, statement_len);
+        curr_state->outputs=(list_t*)malloc(sizeof(list_t));
+        curr_state->outputs[0] = *new_list;
+        curr_state->num_outs = 1;
+        return;
+    }
+
     int matching_idx;
     // Iterate through each character of the statement
     for(int i=0; i<statement_len; i++) {
-        /* Check if there is a */
-        printf("Number of outputs from statement(id=%d) is %d\n", curr_state->id, curr_state->num_outs);
-        
-        
+        // Check if there are any branches from the current state
+        if(curr_state->outputs==NULL) {
+            // No branches - check if the next node matches the current char
+            //if()
+        } else {
+            // There are branches from the current state
+        }
     }
 }
 
