@@ -339,41 +339,10 @@ insert_statement(automaton_t *model, char *statement, int statement_len) {
     int matching_idx;
     // Iterate through each character of the statement
     for(int i=0; i<statement_len; i++) {
-        /* If there are no outputs or none of the outputs match the character,
-           create a new list to branch from the state */
+        /* Check if there is a */
         printf("Number of outputs from statement(id=%d) is %d\n", curr_state->id, curr_state->num_outs);
-        if(( (matching_idx = compare_outputs(curr_state, statement[i])) < 0 || 
-                curr_state->num_outs == 0)) {
-            
-            /* Create a list and add it to the current state outputs using the
-               remaining characters in the statement. */
-            new_list = create_list(statement + i*sizeof(char), statement_len-i);
-            
-            curr_state->num_outs++;
-            
-            
-            if(curr_state->outputs==NULL) {
-                printf("Adding output no.1 to the state\n");
-                // Adding the first output list
-                curr_state->outputs = new_list;
-
-            } else {
-                printf("Adding output no.%d to the state\n", curr_state->num_outs);
-                // Increase the buffer size that outputs points to
-                curr_state->outputs = realloc(curr_state->outputs,
-                                        (curr_state->num_outs)*sizeof(list_t));
-                // Copy the new list into the output array
-                curr_state->outputs[curr_state->num_outs-1] = *new_list;
-            }
-
-            printf("Address of newly added list: %p\n", &(curr_state->outputs[curr_state->num_outs-1]));
-            // We don't need to check rest of the characters, break from loop
-            break;
-        }
-
-        /* Character matches an output, traverse to the corresponding state via
-           the matching transformation node. */
-        curr_state = curr_state->outputs[matching_idx].head->state;
+        
+        
     }
 }
 
