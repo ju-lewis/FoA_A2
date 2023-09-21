@@ -73,6 +73,7 @@ struct state {                  // a state in an automaton is characterized by
     unsigned int    id;         // ... an identifier,
     unsigned int    freq;       // ... frequency of traversal,
     int             visited;    // ... visited status flag, and
+    int             num_outs;   // ... number of branching lists
     list_t*         outputs;    // ... a list of output states.
 };
 
@@ -91,6 +92,7 @@ void init_state(state_t *new, int id);
 void insert_statement(automaton_t *model, char *statement, int statement_len);
 list_t* create_list(char* str, int str_len);
 void free_list(list_t *list);
+int compare_outputs(state_t *curr_state);
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
 int
@@ -103,7 +105,7 @@ main(int argc, char *argv[]) {
     init_state->id=0;
     init_state->visited=0;
     model.ini = init_state;
-
+    
     /*============================= STAGE 0 ==================================*/
 
     // Assign initial string for current statement
@@ -121,21 +123,18 @@ main(int argc, char *argv[]) {
     while(statement_len > 0) {
 
         // Add statement into automaton `model`
-        curr_list = create_list(input, statement_len);
-        free_list(curr_list);
+        insert_statement(&model, input, statement_len);
+        //curr_list = create_list(input, statement_len);
+        //free_list(curr_list);
 
-        // Free previous input pointer
+
+
+        // Free previous input pointer and read from user again
         free(input);
-
-        // Read statement from user into `input`
         input = (char*)malloc(sizeof(char));
         assert(input!=NULL);
         input = read_statement(input, &statement_len);
 
-
-
-
-        
     }
     // Destroy input pointer if it's not to be reassigned.
     if(input!=NULL) {
@@ -189,6 +188,7 @@ void init_state(state_t *new, int id) {
     new->freq = 0;
     new->id = id;
     new->visited = 0;
+    new->num_outs = 0;
     new->outputs = NULL;
 }
 
@@ -223,15 +223,19 @@ create_list(char* str, int str_len) {
         *transition_str = str[i];
 
         // Initialise values of new node
-        new_node->state;
         new_node->next = NULL;
         new_node->str = transition_str;
 
         // Initialise values of state reached by node
         init_state(new_state, next_id);
+        // Set frequency to 1 if it's not a terminating state
+        if(i < str_len-1) {
+            new_state->freq=1;
+        }
         new_node->state = new_state;
         next_id++;
-        printf("Creating node str(%c) - leads to: state with id: %d\n", *(new_node->str), new_state->id);
+
+        printf("Creating node str(%c) - leads to: state with id: %d, freq=%d\n", *(new_node->str), new_state->id, new_state->freq);
         if(list->head == NULL) {
             // Append first node
             list->head = list->tail = new_node;
@@ -245,24 +249,38 @@ create_list(char* str, int str_len) {
     return list;
 }
 
-/* Frees all allocated memory in a linked list (based on listops implementation)
+/* Frees all nodes and corresponding states attached to a list
 */
 void
 free_list(list_t *list) {
     node_t *curr, *prev;
 	assert(list!=NULL);
 	curr = list->head;
-
+    
+    // While the end is not reached
 	while (curr) {
-        printf("Freeing \n");
+        printf("Freeing state: %d, reached by char: %c  -  branching paths? %s\n", curr->state->id, *(curr->str), curr->state->outputs!=NULL ? "yes" : "no");
+
+        // If a branching path is reached, recurse on all branches
+        if(curr->state->outputs!=NULL){
+            for(int j=1; j<curr->state->num_outs; j++) {
+                // Index using size of list_t
+                free_list(curr->state->outputs + j*sizeof(list_t));
+            }
+        }
+
 		prev = curr;
 		curr = curr->next;
         free(prev->state);
         free(prev->str);
 		free(prev);
-        
 	}
 	free(list);
+}
+
+int
+compare_outputs(state_t *curr_state) {
+
 }
 
 /* Takes a training statement and inserts it into the automaton, creating states
@@ -274,8 +292,16 @@ free_list(list_t *list) {
 void
 insert_statement(automaton_t *model, char *statement, int statement_len) {
     
+    // Traverse through current model - starting with ini state
+    state_t *curr_state = model->ini;
     
-    
+    // Iterate through each character of the statement
+    for(int i=0; i<statement_len; i++) {
+        if(curr_state->num_outs == 0 || 0 /* ALSO CHECK IF THE CURRENT LETTER ISN'T IN ANY OF THE OUTPUT ARCS */) {
+            // Create a list and add it to the current state
+        }
+    }
+
 }
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
