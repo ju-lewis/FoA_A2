@@ -88,11 +88,13 @@ int mygetchar(void);            // getchar() that skips carriage returns
 /* FUNCTION DECLARATIONS -----------------------------------------------------*/
 
 char* read_statement(char *str, int *state_len);
-void init_state(state_t *new, int id);
+void init_state(state_t *new);
 void insert_statement(automaton_t *model, char *statement, int statement_len);
 list_t* create_list(char* str, int str_len);
 void free_list(list_t *list);
-int compare_outputs(state_t *curr_state);
+int compare_outputs(state_t *curr_state, char comp_char);
+void free_automaton(automaton_t *model);
+
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
 int
@@ -100,11 +102,9 @@ main(int argc, char *argv[]) {
     
     // Initialise model
     automaton_t model;
-    state_t *init_state = (state_t*)malloc(sizeof(state_t));
-    init_state->freq = 0;
-    init_state->id=0;
-    init_state->visited=0;
-    model.ini = init_state;
+    state_t *initial_state = (state_t*)malloc(sizeof(state_t));
+    init_state(initial_state);
+    model.ini = initial_state;
     
     /*============================= STAGE 0 ==================================*/
 
@@ -127,7 +127,7 @@ main(int argc, char *argv[]) {
         //curr_list = create_list(input, statement_len);
         //free_list(curr_list);
 
-
+        
 
         // Free previous input pointer and read from user again
         free(input);
@@ -141,11 +141,13 @@ main(int argc, char *argv[]) {
         free(input);
     }
     input = NULL;
+    
+    
     /*=========================== END STAGE 0 ================================*/
     
 
 
-
+    free_automaton(&model);
     return EXIT_SUCCESS;        // algorithms are fun!!!
 }
 
@@ -181,15 +183,19 @@ read_statement(char *str, int *state_len) {
 
 /* Initialises an empty automata state
    Parameters: `new` state_t pointer to new state
-               `id` int id to assign to the state
    Returns: void
 */
-void init_state(state_t *new, int id) {
+void init_state(state_t *new) {
+
+    static int id=0;
+
     new->freq = 0;
     new->id = id;
     new->visited = 0;
     new->num_outs = 0;
     new->outputs = NULL;
+
+    id++;
 }
 
 /* Creates a dynamic linked list for a given string - attributing an automata
@@ -227,7 +233,7 @@ create_list(char* str, int str_len) {
         new_node->str = transition_str;
 
         // Initialise values of state reached by node
-        init_state(new_state, next_id);
+        init_state(new_state);
         // Set frequency to 1 if it's not a terminating state
         if(i < str_len-1) {
             new_state->freq=1;
@@ -256,18 +262,21 @@ free_list(list_t *list) {
     node_t *curr, *prev;
 	assert(list!=NULL);
 	curr = list->head;
-    
+    printf("Freeing list at addr: %p\n", list);
     // While the end is not reached
 	while (curr) {
         printf("Freeing state: %d, reached by char: %c  -  branching paths? %s\n", curr->state->id, *(curr->str), curr->state->outputs!=NULL ? "yes" : "no");
 
         // If a branching path is reached, recurse on all branches
         if(curr->state->outputs!=NULL){
-            for(int j=1; j<curr->state->num_outs; j++) {
+            printf("Recursing on %d sub-lists\n", curr->state->num_outs);
+            for(int j=1; j<=curr->state->num_outs; j++) {
                 // Index using size of list_t
                 free_list(curr->state->outputs + j*sizeof(list_t));
             }
         }
+        // We have now freed all branching lists, free the list array itself
+        free(curr->state->outputs);
 
 		prev = curr;
 		curr = curr->next;
@@ -278,9 +287,41 @@ free_list(list_t *list) {
 	free(list);
 }
 
-int
-compare_outputs(state_t *curr_state) {
+/* Frees all dynamically allocated data contained within an automaton
+   Parameters: `model` pointer to automaton
+   Returns: void
+*/
+void free_automaton(automaton_t *model) {
+    state_t *initial_state = model->ini;
+    int num_root_lists = initial_state->num_outs;
+    // Iterate through and free all root lists
+    for(int i=0; i<num_root_lists; i++) {
+        
+        free_list(&(initial_state->outputs[i]));
+        
+    }
+}
 
+/* Takes a state in an automaton, and checks whether a character matches
+   any of the direct output arcs.
+   Parameters: `curr_state` pointer to the state to check
+               `comp_char` the character to check for
+   Returns: An integer describing the index of output matching `comp_char`,
+            returns -1 if not found
+*/
+int
+compare_outputs(state_t *curr_state, char comp_char) {
+    for(int i=0; i<curr_state->num_outs; i++) {
+        printf("Checking output[%d]\n", i);
+        // If the `comp_char` matches any of the outputs, return the index
+        if(*(curr_state->outputs[i].head->str) == comp_char) {
+            printf("Match found at [%d]!\n", i);
+            return i;
+        }
+    }
+    printf("No match.\n");
+    // Not found, return -1
+    return -1;
 }
 
 /* Takes a training statement and inserts it into the automaton, creating states
@@ -291,17 +332,49 @@ compare_outputs(state_t *curr_state) {
 */
 void
 insert_statement(automaton_t *model, char *statement, int statement_len) {
-    
+    printf("Inserting statement to model\n");
     // Traverse through current model - starting with ini state
     state_t *curr_state = model->ini;
-    
+    list_t *new_list, *curr_list;
+    int matching_idx;
     // Iterate through each character of the statement
     for(int i=0; i<statement_len; i++) {
-        if(curr_state->num_outs == 0 || 0 /* ALSO CHECK IF THE CURRENT LETTER ISN'T IN ANY OF THE OUTPUT ARCS */) {
-            // Create a list and add it to the current state
-        }
-    }
+        /* If there are no outputs or none of the outputs match the character,
+           create a new list to branch from the state */
+        printf("Number of outputs from statement(id=%d) is %d\n", curr_state->id, curr_state->num_outs);
+        if((curr_state->num_outs == 0)|| 
+            (matching_idx = compare_outputs(curr_state, statement[i])) < 0) {
+            
+            /* Create a list and add it to the current state outputs using the
+               remaining characters in the statement. */
+            new_list = create_list(statement + i*sizeof(char), statement_len-i);
+            
+            curr_state->num_outs++;
+            
+            
+            if(curr_state->outputs==NULL) {
+                printf("Adding output no.1 to the state\n");
+                // Adding the first output list
+                curr_state->outputs = new_list;
 
+            } else {
+                printf("Adding output no.%d to the state\n", curr_state->num_outs);
+                // Increase the buffer size that outputs points to
+                curr_state->outputs = realloc(curr_state->outputs, 
+                                        (curr_state->num_outs)*sizeof(list_t));
+                // Copy the new list into the output array
+                curr_state->outputs[curr_state->num_outs-1] = *new_list;
+            }
+
+            printf("Address of newly added list: %p\n", &(curr_state->outputs[curr_state->num_outs-1]));
+            // We don't need to check rest of the characters, break from loop
+            break;
+        }
+
+        /* Character matches an output, traverse to the corresponding state via
+           the matching transformation node. */
+        curr_state = curr_state->outputs[matching_idx].head->state;
+    }
 }
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
