@@ -73,44 +73,41 @@ struct state {                  // a state in an automaton is characterized by
     unsigned int    id;         // ... an identifier,
     unsigned int    freq;       // ... frequency of traversal,
     int             visited;    // ... visited status flag, and
-    int             num_outs;   // ... number of branching lists
     list_t*         outputs;    // ... a list of output states.
 };
 
 typedef struct {                // an automaton consists of
     state_t*        ini;        // ... the initial state, and
-    unsigned int    nid;        // ... the identifier of the next new state.
 } automaton_t;
-
-/* USEFUL FUNCTIONS ----------------------------------------------------------*/
-int mygetchar(void);            // getchar() that skips carriage returns
 
 /* FUNCTION DECLARATIONS -----------------------------------------------------*/
 
 char* read_statement(char *str, int *state_len);
-void init_state(state_t *new);
-void insert_statement(automaton_t *model, char *statement, int statement_len);
-list_t* create_list(char* str, int str_len);
-void free_list(list_t *list);
-int compare_outputs(state_t *curr_state, char comp_char);
-void free_automaton(automaton_t *model);
+void init_state(state_t *new, int *num_states);
+void insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states);
+list_t* insert_at_tail(list_t *list, char *str, state_t *next_state);
+void free_state(state_t *curr_state);
 
+/* USEFUL FUNCTIONS ----------------------------------------------------------*/
+int mygetchar(void);            // getchar() that skips carriage returns
 
 /* WHERE IT ALL HAPPENS ------------------------------------------------------*/
 int
 main(int argc, char *argv[]) {
     
-    // Initialise model
-    automaton_t model;
-    state_t *initial_state = (state_t*)malloc(sizeof(state_t));
-    init_state(initial_state);
-    model.ini = initial_state;
     
-    /*============================= STAGE 0 ==================================*/
 
+    // Define and initialise automaton
+    automaton_t model;
+    state_t initial_state;
+    int num_states = 0;
+    init_state(&initial_state, &num_states);
+    model.ini = &initial_state;
+
+    /*============================= STAGE 0 ==================================*/
     // Assign initial string for current statement
-    char curr_char;
-    int statement_len = 1;
+    int statement_len;
+    int num_statements = 0, num_chars = 0;
     char *input;
 
     // Read statement from user into `input`
@@ -118,37 +115,52 @@ main(int argc, char *argv[]) {
     assert(input!=NULL);
     input = read_statement(input, &statement_len);
 
-    list_t *curr_list;
     // Read statements until blank line is read
     while(statement_len > 0) {
 
-        // Add statement into automaton `model`
-        insert_statement(&model, input, statement_len);
-        //curr_list = create_list(input, statement_len);
-        //free_list(curr_list);
-
-        
+        // Add training statement to `model`
+        num_statements++;
+        num_chars += statement_len;
+        insert_statement(&model, input, statement_len, &num_states);
 
         // Free previous input pointer and read from user again
         free(input);
         input = (char*)malloc(sizeof(char));
         assert(input!=NULL);
         input = read_statement(input, &statement_len);
-
+        
     }
     // Destroy input pointer if it's not to be reassigned.
     if(input!=NULL) {
         free(input);
     }
     input = NULL;
-    
-    
+    // Training complete, print model details
+    printf(SDELIM, 0);
+    printf(NOSFMT, num_statements);
+    printf(NOCFMT, num_chars);
+    printf(NPSFMT, num_states);
     /*=========================== END STAGE 0 ================================*/
     
-
-
-    free_automaton(&model);
+    // Free model and exit :)
+    free_state(model.ini);
     return EXIT_SUCCESS;        // algorithms are fun!!!
+}
+
+/* Initialises an empty automata state
+   Parameters: `new` state_t pointer to new state
+   Returns: void
+*/
+void
+init_state(state_t *new, int *num_states) {
+    static int id=0;
+    *num_states = id+1;
+    new->freq = 0;
+    new->id = id;
+    new->visited = 0;
+    new->outputs = NULL;
+
+    id++;
 }
 
 /* Reads from stdin character by character to dynamically sized character array
@@ -181,200 +193,136 @@ read_statement(char *str, int *state_len) {
     return str;
 }
 
-/* Initialises an empty automata state
-   Parameters: `new` state_t pointer to new state
-   Returns: void
-*/
-void init_state(state_t *new) {
-
-    static int id=0;
-
-    new->freq = 0;
-    new->id = id;
-    new->visited = 0;
-    new->num_outs = 0;
-    new->outputs = NULL;
-
-    id++;
-}
-
-/* Creates a dynamic linked list for a given string - attributing an automata
-   state to each node in the list.
-   Parameters: `str` string to be turned into a list
-           `str_len` the length of the string
-   Returns: list_t pointer to `list`
-*/
-list_t*
-create_list(char* str, int str_len) {
-    static int next_id=1;
-    // Allocate memory for a list
-    list_t* list = (list_t*)malloc(sizeof(list_t));
-    assert(list != NULL);
-    list->head = NULL;
-    list->tail = NULL;
-
-    state_t *new_state;
-    node_t *new_node;
-    char* transition_str;
-
-    int i;
-    // Iterate through each char of the input string and 'insert at foot'
-    for(i=0; i<str_len; i++) {
-        // Create state for each character
-        new_state = (state_t*)malloc(sizeof(state_t));
-        new_node = (node_t*)malloc(sizeof(node_t));
-        transition_str = (char*)malloc(sizeof(char));
-
-        // Assign the transition character to the transition node
-        *transition_str = str[i];
-
-        // Initialise values of new node
-        new_node->next = NULL;
-        new_node->str = transition_str;
-
-        // Initialise values of state reached by node
-        init_state(new_state);
-        // Set frequency to 1 if it's not a terminating state
-        if(i < str_len-1) {
-            new_state->freq=1;
-        }
-        new_node->state = new_state;
-        next_id++;
-
-        printf("Creating node str(%c) - leads to: state with id: %d, freq=%d\n", *(new_node->str), new_state->id, new_state->freq);
-        if(list->head == NULL) {
-            // Append first node
-            list->head = list->tail = new_node;
-        } else {
-            // Append subsequent nodes
-            list->tail->next = new_node;
-            list->tail = new_node;
-        }
-    }
-
-    return list;
-}
-
-/* Frees all nodes and corresponding states attached to a list
-*/
-void
-free_list(list_t *list) {
-    node_t *curr, *prev;
-	assert(list!=NULL);
-	curr = list->head;
-    printf("Freeing list at addr: %p\n", list);
-    // While the end is not reached
-	while (curr) {
-        printf("Freeing state: %d, reached by char: %c  -  branching paths? %s\n", curr->state->id, *(curr->str), curr->state->outputs!=NULL ? "yes" : "no");
-
-        // If a branching path is reached, recurse on all branches
-        if(curr->state->outputs!=NULL){
-            printf("Recursing on %d sub-lists\n", curr->state->num_outs);
-            for(int j=1; j<=curr->state->num_outs; j++) {
-                // Index using size of list_t
-                free_list(curr->state->outputs + j*sizeof(list_t));
-            }
-        }
-        // We have now freed all branching lists, free the list array itself
-        free(curr->state->outputs);
-
-		prev = curr;
-		curr = curr->next;
-        free(prev->state);
-        free(prev->str);
-		free(prev);
-	}
-	free(list);
-}
-
-/* Frees all dynamically allocated data contained within an automaton
-   Parameters: `model` pointer to automaton
-   Returns: void
-*/
-void free_automaton(automaton_t *model) {
-    state_t *initial_state = model->ini;
-    int num_root_lists = initial_state->num_outs;
-    // Iterate through and free all root lists
-    for(int i=0; i<num_root_lists; i++) {
-        
-        free_list(&(initial_state->outputs[i]));
-        
-    }
-}
-
-/* Takes a state in an automaton, and checks whether a character matches
-   any of the direct output arcs.
-   Parameters: `curr_state` pointer to the state to check
-               `comp_char` the character to check for
-   Returns: An integer describing the index of output matching `comp_char`,
-            returns -1 if not found
-*/
-int
-compare_outputs(state_t *curr_state, char comp_char) {
-    for(int i=0; i<curr_state->num_outs; i++) {
-        printf("Checking output[%d]\n", i);
-        // If the `comp_char` matches any of the outputs, return the index
-        if(*(curr_state->outputs[i].head->str) == comp_char) {
-            printf("Match found at [%d]!\n", i);
-            return i;
-        }
-    }
-    printf("No match.\n");
-    // Not found, return -1
-    return -1;
-}
-
 /* Takes a training statement and inserts it into the automaton, creating states
    where necessary and incrementing frequencies on already existent states.
-   Parameters: `automaton_t *model` pointer to the model to insert to
-               `char *statement` the string statement to be inserted
+   Parameters: automaton_t* `model` pointer to the model to insert to
+               char* `statement` the character array statement to be inserted
+               int `statement_len` the length of the statement to be added
+
    Returns: void
 */
 void
-insert_statement(automaton_t *model, char *statement, int statement_len) {
-    printf("Inserting statement to model\n");
-    // Traverse through current model - starting with ini state
-    state_t *curr_state = model->ini;
-    list_t *new_list, *curr_list;
-    int matching_idx;
-    // Iterate through each character of the statement
+insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states) {
+    
+    // Initialise current state being checked
+    state_t *curr_state = model->ini, *next_state;
+    
+
+    list_t *output_list;
+    node_t *output_node;
+    char *new_transition_str;
+    int match_found;
+
+    // Iterate through characters in the input
     for(int i=0; i<statement_len; i++) {
-        /* If there are no outputs or none of the outputs match the character,
-           create a new list to branch from the state */
-        printf("Number of outputs from statement(id=%d) is %d\n", curr_state->id, curr_state->num_outs);
-        if(( (matching_idx = compare_outputs(curr_state, statement[i])) < 0 || 
-                curr_state->num_outs == 0)) {
+        curr_state->freq++;
+        match_found = 0;
+        // Check if there are any outputs from the current state
+        if(curr_state->outputs==NULL) {
             
-            /* Create a list and add it to the current state outputs using the
-               remaining characters in the statement. */
-            new_list = create_list(statement + i*sizeof(char), statement_len-i);
+            // No outputs, we must create one
+            // Malloc list
+            output_list = (list_t*)malloc(sizeof(list_t));
+            assert(output_list!=NULL);
+            output_list->head = output_list->tail = NULL;
+            // Initialise next state
+            next_state = (state_t*)malloc(sizeof(state_t));
+            assert(next_state!=NULL);
+            init_state(next_state, num_states);
+            new_transition_str = (char*)malloc(sizeof(char));
+            *new_transition_str = statement[i];
+            assert(new_transition_str!=NULL);
             
-            curr_state->num_outs++;
+            output_list = insert_at_tail(output_list, new_transition_str, next_state);
+            curr_state->outputs = output_list;
             
+            // Now traverse to the newly created output
+            curr_state = curr_state->outputs->head->state;
+        } else {
             
-            if(curr_state->outputs==NULL) {
-                printf("Adding output no.1 to the state\n");
-                // Adding the first output list
-                curr_state->outputs = new_list;
-
-            } else {
-                printf("Adding output no.%d to the state\n", curr_state->num_outs);
-                // Increase the buffer size that outputs points to
-                curr_state->outputs = realloc(curr_state->outputs,
-                                        (curr_state->num_outs)*sizeof(list_t));
-                // Copy the new list into the output array
-                curr_state->outputs[curr_state->num_outs-1] = *new_list;
+            // There are outputs, check if any strs match current char
+            // Traverse list of outputs
+            output_node = curr_state->outputs->head;
+            while(output_node!=NULL) {
+                
+                // Matching character found, go to that state
+                if(*(output_node->str) == statement[i]) {
+                    
+                    curr_state = output_node->state;
+                    match_found = 1;
+                    break;
+                } else {
+                    // Current out doesn't match, attempt going to next output
+                    output_node = output_node->next;
+                }
             }
-
-            printf("Address of newly added list: %p\n", &(curr_state->outputs[curr_state->num_outs-1]));
-            // We don't need to check rest of the characters, break from loop
-            break;
+            // No matches found at all - add a new one for the character
+            if(!match_found) {
+                
+                // Initialise next state
+                next_state = (state_t*)malloc(sizeof(state_t));
+                assert(next_state!=NULL);
+                init_state(next_state, num_states);
+                // Initialise transition str
+                new_transition_str = (char*)malloc(sizeof(char));
+                assert(new_transition_str!=NULL);
+                // Add new state to outputs of current state
+                curr_state->outputs = insert_at_tail(curr_state->outputs, new_transition_str, next_state);
+                // Go to newly created state
+                curr_state = curr_state->outputs->tail->state;
+            }
         }
-
-        /* Character matches an output, traverse to the corresponding state via
-           the matching transformation node. */
-        curr_state = curr_state->outputs[matching_idx].head->state;
     }
+}
+
+/* Inserts a node with corresponding output state to a list
+   Parameters: list_ t* `list` pointer to the list to add to
+               char* `str` the transition string for the next state
+               state_t* `next_state` pointer to the next state
+    Returns: pointer to the list
+*/
+list_t*
+insert_at_tail(list_t *list, char *str, state_t *next_state) {
+	node_t *new;
+	new = (node_t*)malloc(sizeof(node_t));
+	assert(list!=NULL && new!=NULL);
+
+	new->str = str;
+    new->state = next_state;
+	new->next = NULL;
+
+	if (list->tail==NULL) {
+		/* this is the first insertion into the list */
+		list->head = list->tail = new;
+	} else {
+		list->tail->next = new;
+		list->tail = new;
+	}
+	return list;
+}
+
+void
+free_state(state_t *curr_state) {
+    
+    // Base case - no more outputs
+    if(curr_state->outputs==NULL) {
+        free(curr_state->outputs);
+        free(curr_state);
+        curr_state = NULL;
+        return;
+    }
+
+    // Recursive case - call free on all output states
+    node_t *current_node = curr_state->outputs->head;
+    while(current_node!=NULL) {
+        free(current_node->str);
+        free_state(current_node->state);
+        current_node = current_node->next;
+    }
+    // Now free current state
+    free(curr_state->outputs);
+    free(curr_state);
+    curr_state = NULL;
 }
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/

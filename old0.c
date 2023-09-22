@@ -335,27 +335,45 @@ insert_statement(automaton_t *model, char *statement, int statement_len) {
     printf("Inserting statement to model\n");
     // Traverse through current model - starting with ini state
     state_t *curr_state = model->ini;
-    list_t *new_list, curr_list;
-    node_t *curr_node;
-    // If there is no initial list in the model, immediately add list and return
-    if(curr_state->outputs==NULL) {
-        new_list = create_list(statement, statement_len);
-        curr_state->outputs=(list_t*)malloc(sizeof(list_t));
-        curr_state->outputs[0] = *new_list;
-        curr_state->num_outs = 1;
-        return;
-    }
-
+    list_t *new_list, *curr_list;
     int matching_idx;
     // Iterate through each character of the statement
     for(int i=0; i<statement_len; i++) {
-        // Check if there are any branches from the current state
-        if(curr_state->outputs==NULL) {
-            // No branches - check if the next node matches the current char
-            //if()
-        } else {
-            // There are branches from the current state
+        /* If there are no outputs or none of the outputs match the character,
+           create a new list to branch from the state */
+        printf("Number of outputs from statement(id=%d) is %d\n", curr_state->id, curr_state->num_outs);
+        if(( (matching_idx = compare_outputs(curr_state, statement[i])) < 0 || 
+                curr_state->num_outs == 0)) {
+            
+            /* Create a list and add it to the current state outputs using the
+               remaining characters in the statement. */
+            new_list = create_list(statement + i*sizeof(char), statement_len-i);
+            
+            curr_state->num_outs++;
+            
+            
+            if(curr_state->outputs==NULL) {
+                printf("Adding output no.1 to the state\n");
+                // Adding the first output list
+                curr_state->outputs = new_list;
+
+            } else {
+                printf("Adding output no.%d to the state\n", curr_state->num_outs);
+                // Increase the buffer size that outputs points to
+                curr_state->outputs = realloc(curr_state->outputs,
+                                        (curr_state->num_outs)*sizeof(list_t));
+                // Copy the new list into the output array
+                curr_state->outputs[curr_state->num_outs-1] = *new_list;
+            }
+
+            printf("Address of newly added list: %p\n", &(curr_state->outputs[curr_state->num_outs-1]));
+            // We don't need to check rest of the characters, break from loop
+            break;
         }
+
+        /* Character matches an output, traverse to the corresponding state via
+           the matching transformation node. */
+        curr_state = curr_state->outputs[matching_idx].head->state;
     }
 }
 
