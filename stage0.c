@@ -338,9 +338,11 @@ char *make_prediction(automaton_t *model, char *prompt, int prompt_len) {
     // Define initial variables
     state_t *curr_state = model->ini;
     node_t *curr_output;
+    int output_found;
 
     // Traverse the model to map out prompt
     for(int i=0; i<prompt_len; i++) {
+        output_found = 0;
         // Terminate response generation if end of model is reached
         if(curr_state->outputs==NULL) {
             return NULL;
@@ -356,14 +358,20 @@ char *make_prediction(automaton_t *model, char *prompt, int prompt_len) {
                 // Character does match, traverse to that state
                 curr_state = curr_output->state;
                 // Break from inner loop only
-                break;
+                output_found = 1;
             }
         }
+        if(!output_found) {
+            // No outputs from the state matched the character, terminate gen
+            return NULL;
+        }
     }
+    // We are now at a state corresponding to the final character of the prompt
     // Malloc initial memory to store response
     char *output = (char*)malloc(sizeof(char));
 
     // Now we can generate the output based on the prediction
+
     return output;
 }
 
