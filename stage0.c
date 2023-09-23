@@ -88,7 +88,7 @@ void init_state(state_t *new, int *num_states);
 void insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states);
 list_t* insert_at_tail(list_t *list, char *str, state_t *next_state);
 void free_state(state_t *curr_state);
-
+char *make_prediction(automaton_t *model, char *prompt, int prompt_len);
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
 int mygetchar(void);            // getchar() that skips carriage returns
@@ -97,8 +97,6 @@ int mygetchar(void);            // getchar() that skips carriage returns
 int
 main(int argc, char *argv[]) {
     
-    
-
     // Define and initialise automaton
     automaton_t model;
     state_t initial_state;
@@ -153,6 +151,9 @@ main(int argc, char *argv[]) {
     // Read statements until blank line is read
     while(statement_len > 0) {
 
+        // Make prediction using model
+
+
         // Free previous input pointer and read from user again
         free(input);
         input = (char*)malloc(sizeof(char));
@@ -166,6 +167,8 @@ main(int argc, char *argv[]) {
     }
     input = NULL;
     /*=========================== END STAGE 1 ================================*/
+
+
     // Free model and exit :)
     free_state(model.ini);
     return EXIT_SUCCESS;        // algorithms are fun!!!
@@ -328,6 +331,40 @@ insert_at_tail(list_t *list, char *str, state_t *next_state) {
 		list->tail = new;
 	}
 	return list;
+}
+
+char *make_prediction(automaton_t *model, char *prompt, int prompt_len) {
+
+    // Define initial variables
+    state_t *curr_state = model->ini;
+    node_t *curr_output;
+
+    // Traverse the model to map out prompt
+    for(int i=0; i<prompt_len; i++) {
+        // Terminate response generation if end of model is reached
+        if(curr_state->outputs==NULL) {
+            return NULL;
+        }
+
+        // Iterate through the outputs of the current state
+        curr_output = curr_state->outputs->head;
+        while(curr_output) {
+            // If output character doesn't match current character, go next
+            if(*(curr_output->str) != prompt[i]) {
+                curr_output = curr_output->next;
+            } else {
+                // Character does match, traverse to that state
+                curr_state = curr_output->state;
+                // Break from inner loop only
+                break;
+            }
+        }
+    }
+    // Malloc initial memory to store response
+    char *output = (char*)malloc(sizeof(char));
+
+    // Now we can generate the output based on the prediction
+    return output;
 }
 
 void
