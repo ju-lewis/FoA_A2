@@ -143,6 +143,7 @@ main(int argc, char *argv[]) {
     /*=========================== END STAGE 0 ================================*/
     
     /*============================= STAGE 1 ==================================*/
+    printf(SDELIM, 1);
     // Read statement from user into `input`
     input = (char*)malloc(sizeof(char));
     assert(input!=NULL);
@@ -333,7 +334,8 @@ insert_at_tail(list_t *list, char *str, state_t *next_state) {
 	return list;
 }
 
-char *make_prediction(automaton_t *model, char *prompt, int prompt_len) {
+char
+*make_prediction(automaton_t *model, char *prompt, int prompt_len) {
 
     // Define initial variables
     state_t *curr_state = model->ini;
@@ -347,6 +349,7 @@ char *make_prediction(automaton_t *model, char *prompt, int prompt_len) {
         // Terminate response generation if end of model is reached
         if(curr_state->outputs==NULL) {
             //printf("state[%d] has no outputs!\n", curr_state->id);
+	    printf("...\n");
             return NULL;
         }
 
@@ -369,34 +372,54 @@ char *make_prediction(automaton_t *model, char *prompt, int prompt_len) {
         if(!output_found) {
             //printf("None match.\n");
             // No outputs from the state matched the character, terminate gen
+	    printf("%c...\n", prompt[i]);
             return NULL;
         }
     }
     //printf("Traversal succeeded at state[%d]\n", curr_state->id);
     printf("...");
-    return NULL;
     // We are now at a state corresponding to the final character of the prompt
     // Malloc initial memory to store response
     char *output = (char*)malloc(sizeof(char));
-    int highest_freq=0;
-    state_t *next_state;
+    int highest_freq;
+    node_t* chosen_output;
     
     // Now we can generate the output based on the prediction
     while(curr_state->outputs!=NULL) {
+	highest_freq = 0;
+	//printf("Checking the outputs of state[%d]\n", curr_state->id);
         // Find the output state with the highest frequency
         curr_output = curr_state->outputs->head;
-        while(curr_output) {
+        while(curr_output!=NULL) {
+	    //printf("Checking output '%c' of freq=%d\n", *(curr_output->str), curr_output->state->freq);
             if(curr_output->state->freq > highest_freq) {
+
                 // Greater frequency found
                 highest_freq = curr_output->state->freq;
-                next_state = curr_output->state;
+                chosen_output = curr_output;
             } else if (curr_output->state->freq == highest_freq) {
                 // Equal frequncy found, pick the 'greater' output
-                
-            }
-        }
-    }
+                if(*(curr_output->str) >= *(chosen_output->str)) {
+	                highest_freq = curr_output->state->freq;
+			chosen_output = curr_output;
+		}
+            } 
 
+	    if (curr_output->state->freq == 0) {
+		// End of model reached
+		printf("%c\n", *(curr_output->str));
+		return output;
+	    }
+	    // Go to next output
+	    curr_output = curr_output->next;
+        }
+	// Now we have chosen the state we want to traverse to
+	curr_state = chosen_output->state;
+	putchar(*(chosen_output->str));
+	//printf("Chose output state[%d]\n", curr_state->id);
+	//printf("Does state[%d] have any outputs? %s\n", curr_state->id, curr_state->outputs!=NULL ? "yes" : "no");
+    }
+    putchar('\n');
     return output;
 }
 
