@@ -82,11 +82,13 @@ typedef struct {                // an automaton consists of
 
 /* FUNCTION DECLARATIONS -----------------------------------------------------*/
 
+char *read_until_blank(char *input, int *input_len);
 char* read_statement(char *str, int *state_len);
 void init_state(state_t *new, int *num_states);
 void insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states);
 list_t* insert_at_tail(list_t *list, char *str, state_t *next_state);
 void free_state(state_t *curr_state);
+
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
 int mygetchar(void);            // getchar() that skips carriage returns
@@ -142,6 +144,28 @@ main(int argc, char *argv[]) {
     printf(NPSFMT, num_states);
     /*=========================== END STAGE 0 ================================*/
     
+    /*============================= STAGE 1 ==================================*/
+    // Read statement from user into `input`
+    input = (char*)malloc(sizeof(char));
+    assert(input!=NULL);
+    input = read_statement(input, &statement_len);
+
+    // Read statements until blank line is read
+    while(statement_len > 0) {
+
+        // Free previous input pointer and read from user again
+        free(input);
+        input = (char*)malloc(sizeof(char));
+        assert(input!=NULL);
+        input = read_statement(input, &statement_len);
+        
+    }
+    // Destroy input pointer if it's not to be reassigned.
+    if(input!=NULL) {
+        free(input);
+    }
+    input = NULL;
+    /*=========================== END STAGE 1 ================================*/
     // Free model and exit :)
     free_state(model.ini);
     return EXIT_SUCCESS;        // algorithms are fun!!!
@@ -154,7 +178,7 @@ main(int argc, char *argv[]) {
 void
 init_state(state_t *new, int *num_states) {
     static int id=0;
-    *num_states = id+1;
+    *num_states += 1;
     new->freq = 0;
     new->id = id;
     new->visited = 0;
@@ -162,6 +186,7 @@ init_state(state_t *new, int *num_states) {
 
     id++;
 }
+
 
 /* Reads from stdin character by character to dynamically sized character array
    Parameters: `str` - char* to heap memory
@@ -207,7 +232,8 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
     // Initialise current state being checked
     state_t *curr_state = model->ini, *next_state;
     
-
+    //printf("\nInserting new statement!\n");
+    
     list_t *output_list;
     node_t *output_node;
     char *new_transition_str;
@@ -219,7 +245,7 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
         match_found = 0;
         // Check if there are any outputs from the current state
         if(curr_state->outputs==NULL) {
-            
+            //printf("No outputs from state[%d], creating one with id=%d\n", curr_state->id, curr_state->id + 1);
             // No outputs, we must create one
             // Malloc list
             output_list = (list_t*)malloc(sizeof(list_t));
@@ -244,21 +270,22 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
             // Traverse list of outputs
             output_node = curr_state->outputs->head;
             while(output_node!=NULL) {
-                
+                //printf("Checking statement character '%c' against output with char '%c'\n", statement[i], *(output_node->str));
                 // Matching character found, go to that state
                 if(*(output_node->str) == statement[i]) {
-                    
+                    //printf("Character '%c' matches an output from state[%d], traversing to state[%d]\n", statement[i], curr_state->id, output_node->state->id);
                     curr_state = output_node->state;
                     match_found = 1;
                     break;
                 } else {
                     // Current out doesn't match, attempt going to next output
+                    //printf("    Doesn't match, checking arc at %p\n", output_node->next);
                     output_node = output_node->next;
                 }
             }
             // No matches found at all - add a new one for the character
             if(!match_found) {
-                
+                //printf("No matches found for '%c' in outputs from state[%d], creating a new output arc at ", statement[i], curr_state->id);
                 // Initialise next state
                 next_state = (state_t*)malloc(sizeof(state_t));
                 assert(next_state!=NULL);
@@ -266,8 +293,10 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
                 // Initialise transition str
                 new_transition_str = (char*)malloc(sizeof(char));
                 assert(new_transition_str!=NULL);
+                *new_transition_str = statement[i];
                 // Add new state to outputs of current state
                 curr_state->outputs = insert_at_tail(curr_state->outputs, new_transition_str, next_state);
+                //printf("%p\n", curr_state->outputs->tail);
                 // Go to newly created state
                 curr_state = curr_state->outputs->tail->state;
             }
