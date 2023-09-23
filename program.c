@@ -152,7 +152,7 @@ main(int argc, char *argv[]) {
     while(statement_len > 0) {
 
         // Make prediction using model
-
+        make_prediction(&model, input, statement_len);
 
         // Free previous input pointer and read from user again
         free(input);
@@ -342,9 +342,11 @@ char *make_prediction(automaton_t *model, char *prompt, int prompt_len) {
 
     // Traverse the model to map out prompt
     for(int i=0; i<prompt_len; i++) {
+        //printf("Checking '%c' against the outputs of state[%d]\n", prompt[i], curr_state->id);
         output_found = 0;
         // Terminate response generation if end of model is reached
         if(curr_state->outputs==NULL) {
+            //printf("state[%d] has no outputs!\n", curr_state->id);
             return NULL;
         }
 
@@ -356,21 +358,44 @@ char *make_prediction(automaton_t *model, char *prompt, int prompt_len) {
                 curr_output = curr_output->next;
             } else {
                 // Character does match, traverse to that state
+                putchar(prompt[i]);
                 curr_state = curr_output->state;
+                //printf("Output to state[%d] matched.\n", curr_state->id);
                 // Break from inner loop only
                 output_found = 1;
+                break;
             }
         }
         if(!output_found) {
+            //printf("None match.\n");
             // No outputs from the state matched the character, terminate gen
             return NULL;
         }
     }
+    //printf("Traversal succeeded at state[%d]\n", curr_state->id);
+    printf("...");
+    return NULL;
     // We are now at a state corresponding to the final character of the prompt
     // Malloc initial memory to store response
     char *output = (char*)malloc(sizeof(char));
-
+    int highest_freq=0;
+    state_t *next_state;
+    
     // Now we can generate the output based on the prediction
+    while(curr_state->outputs!=NULL) {
+        // Find the output state with the highest frequency
+        curr_output = curr_state->outputs->head;
+        while(curr_output) {
+            if(curr_output->state->freq > highest_freq) {
+                // Greater frequency found
+                highest_freq = curr_output->state->freq;
+                next_state = curr_output->state;
+            } else if (curr_output->state->freq == highest_freq) {
+                // Equal frequncy found, pick the 'greater' output
+                
+            }
+        }
+    }
 
     return output;
 }
