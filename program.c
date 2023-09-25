@@ -89,6 +89,7 @@ void insert_statement(automaton_t *model, char *statement, int statement_len, in
 list_t* insert_at_tail(list_t *list, char *str, state_t *next_state);
 void free_state(state_t *curr_state);
 char *make_prediction(automaton_t *model, char *prompt, int prompt_len);
+void perform_compression(automaton_t *model);
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
 int mygetchar(void);            // getchar() that skips carriage returns
@@ -168,6 +169,41 @@ main(int argc, char *argv[]) {
     }
     input = NULL;
     /*=========================== END STAGE 1 ================================*/
+
+    /*============================= STAGE 2 ==================================*/
+    // Read number of compression steps to perform
+    int comp_steps;
+    scanf("%d", &comp_steps);
+
+    // Perform compression steps
+    for(int i=0; i<comp_steps; i++) {
+
+    }
+
+    // Read statement from user into `input`
+    input = (char*)malloc(sizeof(char));
+    assert(input!=NULL);
+    input = read_statement(input, &statement_len);
+
+    // Read statements until blank line is read
+    while(statement_len > 0) {
+
+        // Make prediction using model
+        make_prediction(&model, input, statement_len);
+
+        // Free previous input pointer and read from user again
+        free(input);
+        input = (char*)malloc(sizeof(char));
+        assert(input!=NULL);
+        input = read_statement(input, &statement_len);
+        
+    }
+    // Destroy input pointer if it's not to be reassigned.
+    if(input!=NULL) {
+        free(input);
+    }
+    input = NULL;
+    /*=========================== END STAGE 2 ================================*/
 
 
     // Free model and exit :)
@@ -446,6 +482,9 @@ free_state(state_t *curr_state) {
     free(curr_state);
     curr_state = NULL;
 }
+
+void
+perform_compression(automaton_t *model) {}
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
 
