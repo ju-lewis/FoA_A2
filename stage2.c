@@ -176,16 +176,17 @@ main(int argc, char *argv[]) {
     // Read number of compression steps to perform
     int comp_steps;
     scanf("%d", &comp_steps);
-
+    // Remove '\n' from stdin input buffer
+    getchar();
     // Perform compression steps
     for(int i=0; i<comp_steps; i++) {
         perform_compression(&model);
     }
-
     // Read statement from user into `input`
     input = (char*)malloc(sizeof(char));
     assert(input!=NULL);
     input = read_statement(input, &statement_len);
+    input[statement_len] = '\0';
 
     // Read statements until blank line is read
     while(statement_len > 0) {
@@ -200,15 +201,18 @@ main(int argc, char *argv[]) {
         input = read_statement(input, &statement_len);
     }
     // Destroy input pointer if it's not to be reassigned.
-    if(input!=NULL) {
+    if(input!=NULL && statement_len > 0) {
+        printf("Statement length: %d\n", statement_len);
         free(input);
     }
     input = NULL;
     /*=========================== END STAGE 2 ================================*/
-
+    printf("Freeing model\n");
 
     // Free model and exit :)
     free_state(model.ini);
+    printf("Done freeing model\n");
+
     return EXIT_SUCCESS;        // algorithms are fun!!!
 }
 
@@ -435,11 +439,11 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
     // Now we can generate the output based on the prediction
     while(curr_state->outputs!=NULL) {
 	highest_freq = 0;
-	//printf("Checking the outputs of state[%d]\n", curr_state->id);
         // Find the output state with the highest frequency
-        curr_output = curr_state->outputs->head;
+        if(curr_state->outputs!=NULL) {
+            chosen_output = curr_output = curr_state->outputs->head;
+        } 
         while(curr_output!=NULL) {
-	    //printf("Checking output '%c' of freq=%d\n", *(curr_output->str), curr_output->state->freq);
             if(curr_output->state->freq > highest_freq) {
 
                 // Greater frequency found
@@ -455,7 +459,7 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
 
             if (curr_output->state->freq == 0) {
                 // End of model reached
-                printf("%c\n", *(curr_output->str));
+                printf("%s\n", curr_output->str);
                 return;
             }
             // Go to next output
@@ -470,28 +474,42 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
     putchar('\n');
 }
 
+/* Recursively frees all automaton states stemming from input state
+   Parameters: state_t* `curr_state` pointer to the initial state
+   Returns: void
+*/
 void
 free_state(state_t *curr_state) {
-    
     // Base case - no more outputs
     if(curr_state->outputs==NULL) {
-        free(curr_state->outputs);
-        free(curr_state);
-        curr_state = NULL;
+        if(curr_state!=NULL) {
+            free(curr_state);
+            curr_state = NULL;
+        }
         return;
     }
 
     // Recursive case - call free on all output states
     node_t *current_node = curr_state->outputs->head;
     while(current_node!=NULL) {
-        free(current_node->str);
-        free_state(current_node->state);
-        current_node = current_node->next;
+        if(current_node->str!=NULL) {
+            free(current_node->str);
+        }
+        if(current_node->state!=NULL) {
+            free_state(current_node->state);
+            current_node = current_node->next;
+        }
     }
-    // Now free current state
-    free(curr_state->outputs);
-    free(curr_state);
-    curr_state = NULL;
+    // Now free current state if it's not in stack memory
+    if(curr_state!=NULL){
+        if(curr_state->outputs!=NULL) {
+            free(curr_state->outputs);
+        }
+        if(curr_state->id != 0) {
+            free(curr_state);
+            curr_state = NULL;
+        }
+    }
 }
 
 /* Performs a single compression pass on the automaton 
