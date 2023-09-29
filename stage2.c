@@ -116,7 +116,7 @@ main(int argc, char *argv[]) {
     input = (char*)malloc(sizeof(char));
     assert(input!=NULL);
     input = read_statement(input, &statement_len);
-
+    
     // Read statements until blank line is read
     while(statement_len > 0) {
 
@@ -186,7 +186,6 @@ main(int argc, char *argv[]) {
     input = (char*)malloc(sizeof(char));
     assert(input!=NULL);
     input = read_statement(input, &statement_len);
-    input[statement_len] = '\0';
 
     // Read statements until blank line is read
     while(statement_len > 0) {
@@ -258,6 +257,13 @@ read_statement(char *str, int *state_len) {
         // Increment length
         curr_statement_len++;
     }
+    // Null-terminate input
+    if(buffer_len <= curr_statement_len) {
+        buffer_len++;
+        str = (char*)realloc(str, sizeof(char) * buffer_len);
+    }
+    str[curr_statement_len] = '\0';
+    
     // Update `statement_length` and return pointer to string
     *state_len = curr_statement_len;
     return str;
@@ -391,16 +397,18 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
     node_t *curr_output;
     int output_found;
     char comp_str[SINGLE_CHAR_STR_LEN];
+    char actual_comp_str[prompt_len];
+
 
     comp_str[1] = '\0';
     // Traverse the model to map out prompt
     for(int i=0; i<prompt_len; i++) {
-        //printf("Checking '%c' against the outputs of state[%d]\n", prompt[i], curr_state->id);
+        printf("Checking '%c' against the outputs of state[%d]\n", prompt[i], curr_state->id);
         comp_str[0] = prompt[i];
         output_found = 0;
         // Terminate response generation if end of model is reached
         if(curr_state->outputs==NULL) {
-            //printf("state[%d] has no outputs!\n", curr_state->id);
+            printf("state[%d] has no outputs!\n", curr_state->id);
 	    printf("...\n");
             return;
         }
@@ -408,6 +416,7 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
         // Iterate through the outputs of the current state
         curr_output = curr_state->outputs->head;
         while(curr_output) {
+            printf("Checking: %s\n", curr_output->str);
             // If output character doesn't match current character, go next
             if(strcmp(comp_str, curr_output->str)) {
                 curr_output = curr_output->next;
@@ -415,20 +424,20 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
                 // Character does match, traverse to that state
                 putchar(prompt[i]);
                 curr_state = curr_output->state;
-                //printf("Output to state[%d] matched.\n", curr_state->id);
+                printf("Output to state[%d] matched.\n", curr_state->id);
                 // Break from inner loop only
                 output_found = 1;
                 break;
             }
         }
         if(!output_found) {
-            //printf("None match.\n");
+            printf("None match.\n");
             // No outputs from the state matched the character, terminate gen
 	    printf("%c...\n", prompt[i]);
             return;
         }
     }
-    //printf("Traversal succeeded at state[%d]\n", curr_state->id);
+    printf("Traversal succeeded at state[%d]\n", curr_state->id);
     printf("...");
     // We are now at a state corresponding to the final character of the prompt
     // Malloc initial memory to store response
@@ -468,8 +477,8 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
         // Now we have chosen the state we want to traverse to
         curr_state = chosen_output->state;
         putchar(chosen_output->str[0]);
-        //printf("Chose output state[%d]\n", curr_state->id);
-        //printf("Does state[%d] have any outputs? %s\n", curr_state->id, curr_state->outputs!=NULL ? "yes" : "no");
+        printf("Chose output state[%d]\n", curr_state->id);
+        printf("Does state[%d] have any outputs? %s\n", curr_state->id, curr_state->outputs!=NULL ? "yes" : "no");
     }
     putchar('\n');
 }
@@ -521,13 +530,11 @@ perform_compression(automaton_t *model) {
 
     state_t *curr_state, *next_state;
     node_t *chosen_output, *curr_output;
-    int condition_met=0;
+    int condition_met=0, output_strlen, curr_len;
     // Traverse through the model (depth-first lowest ASCII value)
     next_state = curr_state = model->ini;
 
     while(next_state!=NULL) {
-
-        
 
         if(next_state->outputs!=NULL) {
             curr_output = next_state->outputs->head;
@@ -543,7 +550,6 @@ perform_compression(automaton_t *model) {
         } else {
             break;
         }
-        
         // We now have the smallest labelled output from the previous state
         curr_state = next_state;
         next_state = chosen_output->state;
@@ -551,7 +557,40 @@ perform_compression(automaton_t *model) {
         // Check if compression condition is met
         if(curr_state->outputs->head == curr_state->outputs->tail && next_state->outputs!=NULL) {
             condition_met = 1;
-            printf("Compression condition met at curr_state[%d], next_state[%d]\n", curr_state->id, next_state->id);
+            printf("Compression condition met at x[%d], y[%d]\n", curr_state->id, next_state->id);
+            // Concatenate the output strings of `curr_state` to `next_state`
+            curr_output = next_state->outputs->head;
+            output_strlen = strlen(curr_state->outputs->head->str);
+            printf("x str: %s (length=%d)\n", curr_state->outputs->head->str, output_strlen);
+            while(curr_output!=NULL) {
+                // Increase length of current output str by `outout_strlen`
+                curr_len = strlen(curr_output->str) + output_strlen;
+                printf("Increasing curr_len from %ld to ", strlen(curr_output->str));
+                printf("%d\n", curr_len);
+                curr_output->str = (char*)realloc(curr_output->str, 
+                    curr_len + 1);
+                printf("Adding \"%s\" to \"%s\" to produce: ", curr_output->str, curr_state->outputs->head->str);
+                // Copy current string to end of buffer
+                memmove(curr_output->str+output_strlen, curr_output->str, 
+                    curr_len);
+                curr_output->str[curr_len] = '\0';
+
+                // Prepend previous state's output str
+                memmove(curr_output->str, curr_state->outputs->head->str,
+                    output_strlen);
+                printf("\"%s\"\n", curr_output->str);
+                // Go to next output
+                curr_output = curr_output->next;
+            }
+            
+            // Free the outputs of `curr_state`
+            free(curr_state->outputs->head->str);
+            free(curr_state->outputs);
+            // Link the updated outputs to 'curr_state'
+            curr_state->outputs = next_state->outputs;
+            // Free `next_state`
+            free(next_state);
+
             break;
         }
     }
