@@ -89,6 +89,7 @@ void init_state(state_t *new, int *num_states);
 void insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states);
 list_t* insert_at_tail(list_t *list, char *str, state_t *next_state);
 void free_state(state_t *curr_state);
+node_t *greatest_output(node_t *current_node);
 void make_prediction(automaton_t *model, char *prompt, int prompt_len);
 void perform_compression(automaton_t *model);
 
@@ -389,94 +390,123 @@ insert_at_tail(list_t *list, char *str, state_t *next_state) {
 	return list;
 }
 
+node_t*
+greatest_output(node_t *current_node) {
+    // Initialise chosen output
+    node_t *chosen_output = current_node;
+    int highest_freq = chosen_output->state->freq;
+
+    while(current_node!=NULL) {
+        
+        //printf("Comparing current:%s and chosen:%s\n", current_node->str, chosen_output->str);
+        if(current_node->state->freq > highest_freq) {
+            // Greater frequency found
+
+            highest_freq = current_node->state->freq;
+            chosen_output = current_node;
+
+
+        } else if (current_node->state->freq == highest_freq) {
+            // Equal frequncy found, pick the 'greater' output
+            
+            if(strcmp(current_node->str, chosen_output->str) > 0) {
+                highest_freq = current_node->state->freq;
+                chosen_output = current_node;
+            }
+        }
+
+        
+        // Go to next output
+        current_node = current_node->next;
+    }
+    return chosen_output;
+}
+
+
 void
 make_prediction(automaton_t *model, char *prompt, int prompt_len) {
 
     // Define initial variables
     state_t *curr_state = model->ini;
     node_t *curr_output;
-    int output_found;
+    int output_found, increment_len = 1, split_print=0;
     char comp_str[SINGLE_CHAR_STR_LEN];
-
     comp_str[1] = '\0';
+
+
     // Traverse the model to map out prompt
-    for(int i=0; i<prompt_len; i++) {
-        printf("Checking '%c' against the outputs of state[%d]\n", prompt[i], curr_state->id);
-        comp_str[0] = prompt[i];
-        output_found = 0;
-        // Terminate response generation if end of model is reached
-        if(curr_state->outputs==NULL) {
-            printf("state[%d] has no outputs!\n", curr_state->id);
-	    printf("...\n");
+    for(int i=0; i<prompt_len; i+=increment_len) {
+        increment_len=1;
+        // Handle reaching end of model - cancel generation
+        if(curr_state->outputs == NULL) {
+            printf("...\n");
             return;
         }
 
-        // Iterate through the outputs of the current state
+        // Handle reaching end of prompt before the end of the model
+        output_found = 0;
         curr_output = curr_state->outputs->head;
-        while(curr_output) {
-            printf("Checking: %s\n", curr_output->str);
-            // If output character doesn't match current character, go next
-            if(strcmp(comp_str, curr_output->str)) {
-                curr_output = curr_output->next;
-            } else {
-                // Character does match, traverse to that state
-                putchar(prompt[i]);
+        while(curr_output!=NULL) {
+            
+            //printf("Checking if %s goes into %s\n", curr_output->str, prompt + i);
+            // Check if transition string goes into the correct spot in prompt
+            if(strstr(prompt + i, curr_output->str) == prompt + i) {
+                
+                printf("%s", curr_output->str);
+                // Increment pointer into prompt by transition string length
+                increment_len = strlen(curr_output->str);
+                output_found = 1;
+                // Go to chosen automaton state
                 curr_state = curr_output->state;
-                printf("Output to state[%d] matched.\n", curr_state->id);
-                // Break from inner loop only
+                break;
+            } else if(strstr(curr_output->str, prompt + i) ==  curr_output->str) {
+                /* Handle the prompt ending during the transition string,
+                   we want to start generation mid-way through prompt */
+                
+                curr_output = greatest_output(curr_output);
+                printf("%s...%s", prompt + i, curr_output->str + prompt_len - i);
+                printf("SPLIT PRINT");
+                curr_state = curr_output->state;
+                // If the end of the model was reached - we can't generate more
+                if(curr_state==NULL || curr_state->outputs==NULL) {
+                    putchar('\n');
+                    return;
+                }
+                split_print = 1;
                 output_found = 1;
                 break;
             }
+            curr_output = curr_output->next;
         }
+
         if(!output_found) {
-            printf("None match.\n");
-            // No outputs from the state matched the character, terminate gen
-	    printf("%c...\n", prompt[i]);
+            // The prompt deviates from the automaton - cancel generation
+            printf("NO OUTPUTS...\n");
             return;
         }
     }
-    printf("Traversal succeeded at state[%d]\n", curr_state->id);
-    printf("...");
+
+    if(!split_print) {
+        printf("...");
+    }
     // We are now at a state corresponding to the final character of the prompt
-    // Malloc initial memory to store response
-    
     int highest_freq;
     node_t *chosen_output;
     
     // Now we can generate the output based on the prediction
     while(curr_state->outputs!=NULL) {
-	highest_freq = 0;
+	    highest_freq = 0;
         // Find the output state with the highest frequency
         if(curr_state->outputs!=NULL) {
             chosen_output = curr_output = curr_state->outputs->head;
-        } 
-        while(curr_output!=NULL) {
-            if(curr_output->state->freq > highest_freq) {
-
-                // Greater frequency found
-                highest_freq = curr_output->state->freq;
-                chosen_output = curr_output;
-            } else if (curr_output->state->freq == highest_freq) {
-                // Equal frequncy found, pick the 'greater' output
-                if(strcmp(chosen_output->str, curr_output->str) < 0) {
-	                highest_freq = curr_output->state->freq;
-			        chosen_output = curr_output;
-		        }
-            }
-
-            if (curr_output->state->freq == 0) {
-                // End of model reached
-                printf("%s\n", curr_output->str);
-                return;
-            }
-            // Go to next output
-            curr_output = curr_output->next;
         }
+        chosen_output = greatest_output(curr_output);
+        if(chosen_output == NULL) {return;}
         // Now we have chosen the state we want to traverse to
         curr_state = chosen_output->state;
-        putchar(chosen_output->str[0]);
-        printf("Chose output state[%d]\n", curr_state->id);
-        printf("Does state[%d] have any outputs? %s\n", curr_state->id, curr_state->outputs!=NULL ? "yes" : "no");
+        printf("%s", chosen_output->str);
+        //printf("Chose output state[%d]\n", curr_state->id);
+        //printf("Does state[%d] have any outputs? %s\n", curr_state->id, curr_state->outputs!=NULL ? "yes" : "no");
     }
     putchar('\n');
 }
@@ -551,7 +581,7 @@ perform_compression(automaton_t *model) {
         // We now have the smallest labelled output from the previous state
         curr_state = next_state;
         next_state = chosen_output->state;
-
+        printf("\n\nChecking: x[%d], y[%d]\n", curr_state->id, next_state->id);
         // Check if compression condition is met
         if(curr_state->outputs->head == curr_state->outputs->tail && next_state->outputs!=NULL) {
             condition_met = 1;
