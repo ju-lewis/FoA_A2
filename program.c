@@ -53,6 +53,11 @@
 #define TFQFMT "Total frequency: %d\n"                      // total frequency
 
 #define CRTRNC '\r'                             // carriage return character
+#define SINGLE_CHAR_STR_LEN 2
+#define REVERSE_TRAVERSAL 1
+#define REGULAR_TRAVERSAL 0
+#define CONTINUE 0
+#define STOP 1
 
 /* TYPE DEFINITIONS ----------------------------------------------------------*/
 typedef struct state state_t;   // a state in an automaton
@@ -87,8 +92,11 @@ char* read_statement(char *str, int *state_len);
 void init_state(state_t *new, int *num_states);
 void insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states);
 list_t* insert_at_tail(list_t *list, char *str, state_t *next_state);
-void free_state(state_t *curr_state);
-char *make_prediction(automaton_t *model, char *prompt, int prompt_len);
+int free_state(state_t *curr_state);
+node_t *greatest_output(node_t *current_node);
+void make_prediction(automaton_t *model, char *prompt, int prompt_len);
+int rec_traverse(state_t *curr_state, int (*action)(state_t*), int reverse, int stop);
+int is_compressible(state_t *x);
 void perform_compression(automaton_t *model);
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
@@ -115,7 +123,7 @@ main(int argc, char *argv[]) {
     input = (char*)malloc(sizeof(char));
     assert(input!=NULL);
     input = read_statement(input, &statement_len);
-
+    
     // Read statements until blank line is read
     while(statement_len > 0) {
 
@@ -171,15 +179,16 @@ main(int argc, char *argv[]) {
     /*=========================== END STAGE 1 ================================*/
 
     /*============================= STAGE 2 ==================================*/
+    printf(SDELIM, 2);
     // Read number of compression steps to perform
     int comp_steps;
     scanf("%d", &comp_steps);
-
+    // Remove '\n' from stdin input buffer
+    getchar();
     // Perform compression steps
     for(int i=0; i<comp_steps; i++) {
         perform_compression(&model);
     }
-
     // Read statement from user into `input`
     input = (char*)malloc(sizeof(char));
     assert(input!=NULL);
@@ -198,15 +207,18 @@ main(int argc, char *argv[]) {
         input = read_statement(input, &statement_len);
     }
     // Destroy input pointer if it's not to be reassigned.
-    if(input!=NULL) {
+    if(input!=NULL && statement_len > 0) {
+        printf("Statement length: %d\n", statement_len);
         free(input);
     }
     input = NULL;
     /*=========================== END STAGE 2 ================================*/
-
+    printf("Freeing model\n");
 
     // Free model and exit :)
-    free_state(model.ini);
+    rec_traverse(model.ini, free_state, REVERSE_TRAVERSAL, CONTINUE);
+    printf("Done freeing model\n");
+
     return EXIT_SUCCESS;        // algorithms are fun!!!
 }
 
@@ -222,7 +234,7 @@ init_state(state_t *new, int *num_states) {
     new->id = id;
     new->visited = 0;
     new->outputs = NULL;
-
+    
     id++;
 }
 
@@ -252,6 +264,13 @@ read_statement(char *str, int *state_len) {
         // Increment length
         curr_statement_len++;
     }
+    // Null-terminate input
+    if(buffer_len <= curr_statement_len) {
+        buffer_len++;
+        str = (char*)realloc(str, sizeof(char) * buffer_len);
+    }
+    str[curr_statement_len] = '\0';
+    
     // Update `statement_length` and return pointer to string
     *state_len = curr_statement_len;
     return str;
@@ -276,11 +295,14 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
     list_t *output_list;
     node_t *output_node;
     char *new_transition_str;
+    char comp_str[SINGLE_CHAR_STR_LEN];
     int match_found;
 
+    comp_str[1] = '\0';
     // Iterate through characters in the input
     for(int i=0; i<statement_len; i++) {
         curr_state->freq++;
+        comp_str[0] = statement[i];
         match_found = 0;
         // Check if there are any outputs from the current state
         if(curr_state->outputs==NULL) {
@@ -294,9 +316,13 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
             next_state = (state_t*)malloc(sizeof(state_t));
             assert(next_state!=NULL);
             init_state(next_state, num_states);
-            new_transition_str = (char*)malloc(sizeof(char));
-            *new_transition_str = statement[i];
+            
+            // Initialise transition string
+            new_transition_str = (char*)malloc(sizeof(char) * SINGLE_CHAR_STR_LEN);
             assert(new_transition_str!=NULL);
+            new_transition_str[0] = statement[i];
+            new_transition_str[1] = '\0';
+            
             
             output_list = insert_at_tail(output_list, new_transition_str, next_state);
             curr_state->outputs = output_list;
@@ -311,7 +337,7 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
             while(output_node!=NULL) {
                 //printf("Checking statement character '%c' against output with char '%c'\n", statement[i], *(output_node->str));
                 // Matching character found, go to that state
-                if(*(output_node->str) == statement[i]) {
+                if(!strcmp(comp_str, output_node->str)) {
                     //printf("Character '%c' matches an output from state[%d], traversing to state[%d]\n", statement[i], curr_state->id, output_node->state->id);
                     curr_state = output_node->state;
                     match_found = 1;
@@ -330,9 +356,10 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
                 assert(next_state!=NULL);
                 init_state(next_state, num_states);
                 // Initialise transition str
-                new_transition_str = (char*)malloc(sizeof(char));
+                new_transition_str = (char*)malloc(sizeof(char) * SINGLE_CHAR_STR_LEN);
                 assert(new_transition_str!=NULL);
-                *new_transition_str = statement[i];
+                new_transition_str[0] = statement[i];
+                new_transition_str[1] = '\0';
                 // Add new state to outputs of current state
                 curr_state->outputs = insert_at_tail(curr_state->outputs, new_transition_str, next_state);
                 //printf("%p\n", curr_state->outputs->tail);
@@ -369,134 +396,306 @@ insert_at_tail(list_t *list, char *str, state_t *next_state) {
 	return list;
 }
 
-char
-*make_prediction(automaton_t *model, char *prompt, int prompt_len) {
+node_t*
+greatest_output(node_t *current_node) {
+    // Initialise chosen output
+    node_t *chosen_output = current_node;
+    int highest_freq = chosen_output->state->freq;
+
+    while(current_node!=NULL) {
+        
+        //printf("Comparing current:%s and chosen:%s\n", current_node->str, chosen_output->str);
+        if(current_node->state->freq > highest_freq) {
+            // Greater frequency found
+
+            highest_freq = current_node->state->freq;
+            chosen_output = current_node;
+
+
+        } else if (current_node->state->freq == highest_freq) {
+            // Equal frequncy found, pick the 'greater' output
+            
+            if(strcmp(current_node->str, chosen_output->str) > 0) {
+                highest_freq = current_node->state->freq;
+                chosen_output = current_node;
+            }
+        }
+        // Go to next output
+        current_node = current_node->next;
+    }
+    return chosen_output;
+}
+
+
+void
+make_prediction(automaton_t *model, char *prompt, int prompt_len) {
 
     // Define initial variables
     state_t *curr_state = model->ini;
     node_t *curr_output;
-    int output_found;
+    int output_found, increment_len = 1, split_print=0;
+    char comp_str[SINGLE_CHAR_STR_LEN];
+    comp_str[1] = '\0';
+
 
     // Traverse the model to map out prompt
-    for(int i=0; i<prompt_len; i++) {
-        //printf("Checking '%c' against the outputs of state[%d]\n", prompt[i], curr_state->id);
-        output_found = 0;
-        // Terminate response generation if end of model is reached
-        if(curr_state->outputs==NULL) {
-            //printf("state[%d] has no outputs!\n", curr_state->id);
-	    printf("...\n");
-            return NULL;
+    for(int i=0; i<prompt_len; i+=increment_len) {
+        increment_len=1;
+        // Handle reaching end of model - cancel generation
+        if(curr_state->outputs == NULL) {
+            printf("...\n");
+            return;
         }
 
-        // Iterate through the outputs of the current state
+        // Handle reaching end of prompt before the end of the model
+        output_found = 0;
         curr_output = curr_state->outputs->head;
-        while(curr_output) {
-            // If output character doesn't match current character, go next
-            if(*(curr_output->str) != prompt[i]) {
-                curr_output = curr_output->next;
-            } else {
-                // Character does match, traverse to that state
-                putchar(prompt[i]);
+        while(curr_output!=NULL) {
+            
+            //printf("Checking if %s goes into %s\n", curr_output->str, prompt + i);
+            // Check if transition string goes into the correct spot in prompt
+            if(strstr(prompt + i, curr_output->str) == prompt + i) {
+                
+                printf("%s", curr_output->str);
+                // Increment pointer into prompt by transition string length
+                increment_len = strlen(curr_output->str);
+                output_found = 1;
+                // Go to chosen automaton state
                 curr_state = curr_output->state;
-                //printf("Output to state[%d] matched.\n", curr_state->id);
-                // Break from inner loop only
+                break;
+            } else if(strstr(curr_output->str, prompt + i) ==  curr_output->str) {
+                /* Handle the prompt ending during the transition string,
+                   we want to start generation mid-way through prompt */
+                
+                curr_output = greatest_output(curr_output);
+                printf("%s...%s", prompt + i, curr_output->str + prompt_len - i);
+                
+                curr_state = curr_output->state;
+                // If the end of the model was reached - we can't generate more
+                if(curr_state==NULL || curr_state->outputs==NULL) {
+                    
+                    putchar('\n');
+                    return;
+                }
+                split_print = 1;
                 output_found = 1;
                 break;
             }
+            curr_output = curr_output->next;
         }
+
         if(!output_found) {
-            //printf("None match.\n");
-            // No outputs from the state matched the character, terminate gen
-	    printf("%c...\n", prompt[i]);
-            return NULL;
+            // The prompt deviates from the automaton - cancel generation
+            //printf("NO OUTPUTS...\n");
+            return;
         }
     }
-    //printf("Traversal succeeded at state[%d]\n", curr_state->id);
-    printf("...");
+
+    if(!split_print) {
+        printf("...");
+    }
     // We are now at a state corresponding to the final character of the prompt
-    // Malloc initial memory to store response
-    char *output = (char*)malloc(sizeof(char));
     int highest_freq;
-    node_t* chosen_output;
+    node_t *chosen_output;
     
     // Now we can generate the output based on the prediction
     while(curr_state->outputs!=NULL) {
-	highest_freq = 0;
-	//printf("Checking the outputs of state[%d]\n", curr_state->id);
+	    highest_freq = 0;
         // Find the output state with the highest frequency
-        curr_output = curr_state->outputs->head;
-        while(curr_output!=NULL) {
-	    //printf("Checking output '%c' of freq=%d\n", *(curr_output->str), curr_output->state->freq);
-            if(curr_output->state->freq > highest_freq) {
-
-                // Greater frequency found
-                highest_freq = curr_output->state->freq;
-                chosen_output = curr_output;
-            } else if (curr_output->state->freq == highest_freq) {
-                // Equal frequncy found, pick the 'greater' output
-                if(*(curr_output->str) >= *(chosen_output->str)) {
-	                highest_freq = curr_output->state->freq;
-			chosen_output = curr_output;
-		}
-            } 
-
-	    if (curr_output->state->freq == 0) {
-		// End of model reached
-		printf("%c\n", *(curr_output->str));
-		return output;
-	    }
-	    // Go to next output
-	    curr_output = curr_output->next;
+        if(curr_state->outputs!=NULL) {
+            chosen_output = curr_output = curr_state->outputs->head;
         }
-	// Now we have chosen the state we want to traverse to
-	curr_state = chosen_output->state;
-	putchar(*(chosen_output->str));
-	//printf("Chose output state[%d]\n", curr_state->id);
-	//printf("Does state[%d] have any outputs? %s\n", curr_state->id, curr_state->outputs!=NULL ? "yes" : "no");
+        chosen_output = greatest_output(curr_output);
+        if(chosen_output == NULL) {return;}
+        // Now we have chosen the state we want to traverse to
+        curr_state = chosen_output->state;
+        printf("%s", chosen_output->str);
+        //printf("Chose output state[%d]\n", curr_state->id);
+        //printf("Does state[%d] have any outputs? %s\n", curr_state->id, curr_state->outputs!=NULL ? "yes" : "no");
     }
     putchar('\n');
-    return output;
 }
 
-void
-free_state(state_t *curr_state) {
+/* Polymorphic recursive traversal function that calls an action on every state
+   Parameters: `curr_state` pointer to the current state
+               `action` function pointer to action to perform (state_t -> int)
+               `reverse` flag to control whether traversal or action comes 1st
+               `stop` flag to signal early termination
+   Returns: 0 if traversal completed, 1 if terminated early
+*/
+int
+rec_traverse(state_t *curr_state, int (*action)(state_t*), int reverse, int stop) {
     
     // Base case - no more outputs
-    if(curr_state->outputs==NULL) {
-        free(curr_state->outputs);
-        free(curr_state);
-        curr_state = NULL;
-        return;
+    if(curr_state==NULL || stop) {
+        return stop;
     }
+    // Recursive case - Traverse to all output states
+    
+    // If it's not in reverse traversal order, call action now
+    if(!reverse) {
+        //printf("Checking compression condition at x[%d]\n", curr_state->id);
+        stop = action(curr_state);
+        printf("x[%d] will lead to compression - stop = %d\n", curr_state->id, stop);
+        if(stop) {return stop;}
+    }
+    if(curr_state->outputs != NULL) {
+        node_t *current_node = curr_state->outputs->head;
+        while(current_node!=NULL) {
 
-    // Recursive case - call free on all output states
-    node_t *current_node = curr_state->outputs->head;
-    while(current_node!=NULL) {
-        free(current_node->str);
-        free_state(current_node->state);
-        current_node = current_node->next;
+            if(current_node->state!=NULL) {
+                stop = rec_traverse(current_node->state, action, reverse, stop);
+                if(stop) {return stop;}
+            }
+            current_node = current_node->next;   
+        }
+    } else
+    // Call action on current state for reverse traversal order
+    if(reverse) {
+        stop = action(curr_state);
+        if(stop) {return stop;}
     }
-    // Now free current state
-    free(curr_state->outputs);
-    free(curr_state);
-    curr_state = NULL;
 }
 
+
+/* Frees all dynamic memory associated with a single state
+   Parameters: `curr_state` pointer to the state to be freed
+   Returns: CONTINUE flag, to keep recursivly freeing the automaton
+*/
+int
+free_state(state_t *curr_state) {
+    printf("Freeing state[%d]\n", curr_state->id);
+    if(curr_state==NULL) {return CONTINUE;}
+    // Free all outputs
+    if(curr_state->outputs!=NULL){
+        node_t *curr_node = curr_state->outputs->head;
+        while(curr_node!=NULL) {
+            free(curr_node->str);
+            free(curr_node);
+            curr_node = curr_node->next;
+        }
+        
+        // Finally, free the current state
+        free(curr_state->outputs);
+    }
+    if(curr_state->id!=0) {
+        free(curr_state);
+    }
+    return CONTINUE;
+}
+
+/* Checks whether the compression condition is statisfied from a given state
+   Parameters: `x` the first state to check from (corresponds to x in the rules)
+   Returns: 1 if compressible, 0 if not.
+*/
+int
+is_compressible(state_t *x) {
+    
+    // If `x` state has more than 1 output, it's not compressible
+    if(x->outputs==NULL || x->outputs->head != x->outputs->tail) {
+        return 0;
+    }
+    // If 'y' has no output states, it's not compressible
+    state_t *y = x->outputs->head->state;
+    if(y == NULL || y->outputs == NULL) {
+        return 0;
+    }
+    
+    return 1;
+}
+
+
+
+/* Performs a single compression pass on the automaton 
+   Parameters: automaton_t* `model`: pointer to the automaton
+   Returns: void
+*/
 void
 perform_compression(automaton_t *model) {
 
-    state_t *curr_state, *next_state;
-    char* smallest_str, curr_str;
+    state_t *x, *y;
+    node_t *curr_output, *chosen_output;
+    int x_str_len, curr_str_len, freq_sum = 0;
+    char *new_str;
 
-    // Traverse through the model (depth-first lowest ASCII value)
-    curr_state = model->ini;
-
-    while(next_state!=NULL) {
-        if(curr_state->outputs!=NULL) {
-
-        }
-    }
+    x = y = model->ini;
     
+    // Loop while there are outputs from the current state
+    while(x->outputs != NULL) {
+        // Initialise output search
+        chosen_output = curr_output = x->outputs->head;
+        printf("choosing outputs\n");
+        /* Find an output that 1. Leads to a possible compression 2. has the 
+           smallest ASCII value label. */
+        while(curr_output != NULL) {
+            // Skip output if it has been visited
+            if (curr_output->state->visited == 1) {
+                if(chosen_output == curr_output) {
+                    chosen_output = curr_output->next;
+                }
+                curr_output = curr_output->next;
+                printf("------------Doesn't lead to comp-------------\n");
+                continue;
+            }
+            // Skip output if it has a greater label than the chosen output
+            if (strcmp(curr_output->str, chosen_output->str) > 0) {
+                curr_output = curr_output->next;
+                printf("---------------bad label-----------------\n");
+                continue;
+            }
+            // We now have a candidate output
+            chosen_output = curr_output;
+            
+            // Go to the next output
+            curr_output = curr_output->next;
+        }
+        if(chosen_output==NULL) {
+            return;
+        }
+        // We have now chosen the state to traverse to
+        x = y;
+        y = chosen_output->state;
+        printf("Chosen states: x[%d], y[%d]\n", x->id, y->id);
+        // Check if compression condition is met
+        if(is_compressible(x)) {
+            // Concatenate the transition strings of y to x's transition string
+            printf("YEAH!\n");
+            x_str_len = strlen(x->outputs->head->str);
+            curr_output = y->outputs->head;
+            while(curr_output != NULL) {
+                freq_sum += curr_output->state->freq;
+                // Create a new memory buffer for the concatenated string
+                curr_str_len = strlen(curr_output->str);
+                new_str = (char*)malloc(sizeof(char) * 
+                    (x_str_len + curr_str_len + 1));
+                // Copy x's transition string into the buffer and add y's string
+                strcpy(new_str, x->outputs->head->str);
+                strcat(new_str, curr_output->str);
+                // Free the old string
+                free(curr_output->str);
+                // Point current output to the new string
+                curr_output->str = new_str;
+                printf("Compressed string: %s\n", curr_output->str);
+                // Go to the next output
+                curr_output = curr_output->next;
+            }
+            // Set x's outputs to the updated `y` outputs
+            free(x->outputs->head->str);
+            x->outputs = y->outputs;
+            printf("Frequency sum: %d\n", freq_sum);
+            // Check if the end of that 'compression path' has been reached
+            if(freq_sum == 0) {
+                printf("Setting visited to 1!\n");
+                x->visited = 1;
+            }
+
+            // Free `y` state and return
+            free(y);
+            return;
+        }
+        x = y;
+    }
+
 }
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/

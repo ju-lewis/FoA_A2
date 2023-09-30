@@ -54,6 +54,10 @@
 
 #define CRTRNC '\r'                             // carriage return character
 #define SINGLE_CHAR_STR_LEN 2
+#define REVERSE_TRAVERSAL 1
+#define REGULAR_TRAVERSAL 0
+#define CONTINUE 0
+#define STOP 1
 
 /* TYPE DEFINITIONS ----------------------------------------------------------*/
 typedef struct state state_t;   // a state in an automaton
@@ -88,9 +92,11 @@ char* read_statement(char *str, int *state_len);
 void init_state(state_t *new, int *num_states);
 void insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states);
 list_t* insert_at_tail(list_t *list, char *str, state_t *next_state);
-void free_state(state_t *curr_state);
+int free_state(state_t *curr_state);
 node_t *greatest_output(node_t *current_node);
 void make_prediction(automaton_t *model, char *prompt, int prompt_len);
+int rec_traverse(state_t *curr_state, int (*action)(state_t*), int reverse, int stop);
+int is_compressable(state_t *x);
 void perform_compression(automaton_t *model);
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
@@ -210,7 +216,7 @@ main(int argc, char *argv[]) {
     printf("Freeing model\n");
 
     // Free model and exit :)
-    free_state(model.ini);
+    rec_traverse(model.ini, free_state, REVERSE_TRAVERSAL, CONTINUE);
     printf("Done freeing model\n");
 
     return EXIT_SUCCESS;        // algorithms are fun!!!
@@ -228,7 +234,7 @@ init_state(state_t *new, int *num_states) {
     new->id = id;
     new->visited = 0;
     new->outputs = NULL;
-
+    
     id++;
 }
 
@@ -414,8 +420,6 @@ greatest_output(node_t *current_node) {
                 chosen_output = current_node;
             }
         }
-
-        
         // Go to next output
         current_node = current_node->next;
     }
@@ -465,10 +469,11 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
                 
                 curr_output = greatest_output(curr_output);
                 printf("%s...%s", prompt + i, curr_output->str + prompt_len - i);
-                printf("SPLIT PRINT");
+                
                 curr_state = curr_output->state;
                 // If the end of the model was reached - we can't generate more
                 if(curr_state==NULL || curr_state->outputs==NULL) {
+                    
                     putchar('\n');
                     return;
                 }
@@ -481,7 +486,7 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
 
         if(!output_found) {
             // The prompt deviates from the automaton - cancel generation
-            printf("NO OUTPUTS...\n");
+            //printf("NO OUTPUTS...\n");
             return;
         }
     }
@@ -511,43 +516,91 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
     putchar('\n');
 }
 
-/* Recursively frees all automaton states stemming from input state
-   Parameters: state_t* `curr_state` pointer to the initial state
-   Returns: void
+/* Polymorphic recursive traversal function that calls an action on every state
+   Parameters: `curr_state` pointer to the current state
+               `action` function pointer to action to perform (state_t -> int)
+               `reverse` flag to control whether traversal or action comes 1st
+               `stop` flag to signal early termination
+   Returns: 0 if traversal completed, 1 if terminated early
 */
-void
-free_state(state_t *curr_state) {
+int
+rec_traverse(state_t *curr_state, int (*action)(state_t*), int reverse, int stop) {
+    
     // Base case - no more outputs
-    if(curr_state->outputs==NULL) {
-        if(curr_state!=NULL) {
-            free(curr_state);
-            curr_state = NULL;
-        }
-        return;
+    if(curr_state==NULL || stop) {
+        return stop;
     }
+    // Recursive case - Traverse to all output states
+    
+    // If it's not in reverse traversal order, call action now
+    if(!reverse) {
+        stop = action(curr_state);
+    }
+    if(curr_state->outputs != NULL) {
+        node_t *current_node = curr_state->outputs->head;
+        while(current_node!=NULL) {
 
-    // Recursive case - call free on all output states
-    node_t *current_node = curr_state->outputs->head;
-    while(current_node!=NULL) {
-        if(current_node->str!=NULL) {
-            free(current_node->str);
-        }
-        if(current_node->state!=NULL) {
-            free_state(current_node->state);
-            current_node = current_node->next;
+            if(current_node->state!=NULL) {
+                stop = rec_traverse(current_node->state, action, reverse, stop);
+                if(stop) {return stop;}
+            }
+            current_node = current_node->next;   
         }
     }
-    // Now free current state if it's not in stack memory
-    if(curr_state!=NULL){
-        if(curr_state->outputs!=NULL) {
-            free(curr_state->outputs);
-        }
-        if(curr_state->id != 0) {
-            free(curr_state);
-            curr_state = NULL;
-        }
+    // Call action on current state for reverse traversal order
+    if(reverse) {
+        stop = action(curr_state);
     }
+    
 }
+
+
+/* Frees all dynamic memory associated with a single state
+   Parameters: `curr_state` pointer to the state to be freed
+   Returns: CONTINUE flag, to keep recursivly freeing the automaton
+*/
+int
+free_state(state_t *curr_state) {
+    printf("Freeing state[%d]\n", curr_state->id);
+    if(curr_state==NULL) {return CONTINUE;}
+    // Free all outputs
+    if(curr_state->outputs!=NULL){
+        node_t *curr_node = curr_state->outputs->head;
+        while(curr_node!=NULL) {
+            free(curr_node->str);
+            free(curr_node);
+            curr_node = curr_node->next;
+        }
+        
+        // Finally, free the current state
+        free(curr_state->outputs);
+    }
+    if(curr_state->id!=0) {
+        free(curr_state);
+    }
+    return CONTINUE;
+}
+
+/* Checks whether the compression condition is statisfied from a given state
+   Parameters: `x` the first state to check from (corresponds to x in the rules)
+   Returns: 1 if compressable, 0 if not.
+*/
+int
+is_compressable(state_t *x) {
+    // If `x` state has more than 1 output, it's not compressable
+    if(x->outputs->head != x->outputs->tail) {
+        return 0;
+    }
+    // If 'y' has no output states, it's not compressable
+    state_t *y = x->outputs->head->state;
+    printf("Checking compression condition at x[%d] y[%d]\n", x->id, y->id);
+    if(y == NULL || y->outputs == NULL) {
+        return 0;
+    }
+    return 1;
+}
+
+
 
 /* Performs a single compression pass on the automaton 
    Parameters: automaton_t* `model`: pointer to the automaton
@@ -558,7 +611,7 @@ perform_compression(automaton_t *model) {
 
     state_t *curr_state, *next_state;
     node_t *chosen_output, *curr_output;
-    int condition_met=0, output_strlen, curr_len;
+    int condition_met=0, output_strlen, curr_len, compressable;
     // Traverse through the model (depth-first lowest ASCII value)
     next_state = curr_state = model->ini;
 
@@ -567,9 +620,15 @@ perform_compression(automaton_t *model) {
         if(next_state->outputs!=NULL) {
             curr_output = next_state->outputs->head;
             chosen_output = curr_output;
-            // Scan through outputs to find 'lowest' value
-            while (curr_output->next) {
-                if(strcmp(curr_output->str, chosen_output->str) < 0) {
+            /* Scan through outputs to find 'lowest' value that lead to possible
+               compressions.
+            */
+            while (curr_output) {
+                
+                compressable = rec_traverse(next_state, 
+                    is_compressable, REGULAR_TRAVERSAL, CONTINUE);
+                
+                if(strcmp(curr_output->str, chosen_output->str) < 0 && compressable) {
                     chosen_output = curr_output;
                 }
                 curr_output = curr_output->next;
@@ -578,26 +637,34 @@ perform_compression(automaton_t *model) {
         } else {
             break;
         }
-        // We now have the smallest labelled output from the previous state
         curr_state = next_state;
         next_state = chosen_output->state;
-        printf("\n\nChecking: x[%d], y[%d]\n", curr_state->id, next_state->id);
+        // We now have the smallest labelled output from the previous state
+        
+        // If the state doesn't lead to any possible compressions
+        if(!compressable) {
+            continue;
+        }
+
+
+        
         // Check if compression condition is met
-        if(curr_state->outputs->head == curr_state->outputs->tail && next_state->outputs!=NULL) {
+        if(!(next_state->visited) && curr_state->outputs->head == curr_state->outputs->tail && next_state->outputs!=NULL) {
             condition_met = 1;
-            printf("Compression condition met at x[%d], y[%d]\n", curr_state->id, next_state->id);
+            
+            
             // Concatenate the output strings of `curr_state` to `next_state`
             curr_output = next_state->outputs->head;
             output_strlen = strlen(curr_state->outputs->head->str);
-            printf("x str: %s (length=%d)\n", curr_state->outputs->head->str, output_strlen);
+            
+            
             while(curr_output!=NULL) {
                 // Increase length of current output str by `outout_strlen`
                 curr_len = strlen(curr_output->str) + output_strlen;
-                printf("Increasing curr_len from %ld to ", strlen(curr_output->str));
-                printf("%d\n", curr_len);
+                
                 curr_output->str = (char*)realloc(curr_output->str, 
                     curr_len + 1);
-                printf("Adding \"%s\" to \"%s\" to produce: ", curr_output->str, curr_state->outputs->head->str);
+                
                 // Copy current string to end of buffer
                 memmove(curr_output->str+output_strlen, curr_output->str, 
                     curr_len);
@@ -606,7 +673,7 @@ perform_compression(automaton_t *model) {
                 // Prepend previous state's output str
                 memmove(curr_output->str, curr_state->outputs->head->str,
                     output_strlen);
-                printf("\"%s\"\n", curr_output->str);
+                
                 // Go to next output
                 curr_output = curr_output->next;
             }
@@ -622,8 +689,6 @@ perform_compression(automaton_t *model) {
             break;
         }
     }
-    
-    
 }
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/

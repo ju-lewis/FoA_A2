@@ -1,15 +1,6 @@
-Hey#Prof
-Hi#Sir
-Hi#Sir
-Hi#Prof
-Hello
-Hey
-Hi#there
-Hey#you
+hello
+hezlo
+hexlo
 
-Hey#
-Hi#T
-Hey
-Hel
 
-1
+10
