@@ -90,14 +90,15 @@ typedef struct {                // an automaton consists of
 char *read_until_blank(char *input, int *input_len);
 char* read_statement(char *str, int *state_len);
 void init_state(state_t *new, int *num_states);
-void insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states);
+void insert_statement(automaton_t *model, char *statement, int statement_len, 
+    int *num_states, int *freq_count);
 list_t* insert_at_tail(list_t *list, char *str, state_t *next_state);
 void free_state(state_t *curr_state);
 node_t *greatest_output(node_t *current_node);
 void make_prediction(automaton_t *model, char *prompt, int prompt_len);
 void read_prompts(automaton_t *model);
 int is_compressible(state_t *x);
-void perform_compression(automaton_t *model);
+void perform_compression(automaton_t *model, int *num_states, int *freq_count);
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
 int mygetchar(void);            // getchar() that skips carriage returns
@@ -116,7 +117,7 @@ main(int argc, char *argv[]) {
     /*============================= STAGE 0 ==================================*/
     // Assign initial string for current statement
     int statement_len;
-    int num_statements = 0, num_chars = 0;
+    int num_statements = 0, num_chars = 0, freq_count = 0;
     char *input;
 
     // Read statement from user into `input`
@@ -130,7 +131,7 @@ main(int argc, char *argv[]) {
         // Add training statement to `model`
         num_statements++;
         num_chars += statement_len;
-        insert_statement(&model, input, statement_len, &num_states);
+        insert_statement(&model, input, statement_len, &num_states, &freq_count);
 
         // Free previous input pointer and read from user again
         free(input);
@@ -149,6 +150,7 @@ main(int argc, char *argv[]) {
     printf(NOSFMT, num_statements);
     printf(NOCFMT, num_chars);
     printf(NPSFMT, num_states);
+    printf("sdfishisfh freqs: %d\n", freq_count);
     /*=========================== END STAGE 0 ================================*/
     
     /*============================= STAGE 1 ==================================*/
@@ -165,8 +167,11 @@ main(int argc, char *argv[]) {
     getchar();
     // Perform compression steps
     for(int i=0; i<comp_steps; i++) {
-        perform_compression(&model);
+        perform_compression(&model, &num_states, &freq_count);
     }
+    printf(NPSFMT, num_states);
+    printf(TFQFMT, freq_count);
+    printf(MDELIM);
     // Now query the model again
     read_prompts(&model);
 
@@ -243,7 +248,7 @@ read_statement(char *str, int *state_len) {
    Returns: void
 */
 void
-insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states) {
+insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states, int *freq_count) {
     
     // Initialise current state being checked
     state_t *curr_state = model->ini, *next_state;
@@ -260,11 +265,11 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
     // Iterate through characters in the input
     for(int i=0; i<statement_len; i++) {
         curr_state->freq++;
+        *freq_count += 1;
         comp_str[0] = statement[i];
         match_found = 0;
         // Check if there are any outputs from the current state
         if(curr_state->outputs==NULL) {
-            //printf("No outputs from state[%d], creating one with id=%d\n", curr_state->id, curr_state->id + 1);
             // No outputs, we must create one
             // Malloc list
             output_list = (list_t*)malloc(sizeof(list_t));
@@ -477,7 +482,8 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
    Parameters: `model` pointer to the automaton to query
    Returns: void
 */
-void read_prompts(automaton_t *model) {
+void
+read_prompts(automaton_t *model) {
     char *input;
     int statement_len;
 
@@ -564,7 +570,7 @@ is_compressible(state_t *x) {
    Returns: void
 */
 void
-perform_compression(automaton_t *model) {
+perform_compression(automaton_t *model, int *num_states, int *freq_count) {
 
     state_t *x, *y;
     node_t *curr_output, *chosen_output;
@@ -605,13 +611,19 @@ perform_compression(automaton_t *model) {
         // We have now chosen the state to traverse to
         x = y;
         y = chosen_output->state;
+        printf("Compressing x[%d], y[%d]\n", x->id, y->id);
         // Check if compression condition is met
         if(is_compressible(x)) {
+            // Update the automaton's frequency and state counts
+            *num_states -= 1;
+            *freq_count -= y->freq;
             // Concatenate the transition strings of y to x's transition string
             x_str_len = strlen(x->outputs->head->str);
             curr_output = y->outputs->head;
             while(curr_output != NULL) {
                 freq_sum += curr_output->state->freq;
+                
+
                 // Create a new memory buffer for the concatenated string
                 curr_str_len = strlen(curr_output->str);
                 new_str = (char*)malloc(sizeof(char) * 
