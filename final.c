@@ -97,8 +97,8 @@ void free_state(state_t *curr_state);
 node_t *greatest_output(node_t *current_node);
 void make_prediction(automaton_t *model, char *prompt, int prompt_len);
 void read_prompts(automaton_t *model);
-int is_compressible(state_t *x);
-void perform_compression(automaton_t *model, int *num_states, int *freq_count);
+int is_compressible(state_t *x, state_t *y);
+int perform_compression(automaton_t *model, int *num_states, int *freq_count);
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
 int mygetchar(void);            // getchar() that skips carriage returns
@@ -167,7 +167,8 @@ main(int argc, char *argv[]) {
     getchar();
     // Perform compression steps
     for(int i=0; i<comp_steps; i++) {
-        perform_compression(&model, &num_states, &freq_count);
+        printf("Compression step: %d\n", i+1);
+        comp_steps += perform_compression(&model, &num_states, &freq_count);
     }
     printf(NPSFMT, num_states);
     printf(TFQFMT, freq_count);
@@ -396,9 +397,6 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
     state_t *curr_state = model->ini;
     node_t *curr_output;
     int output_found, increment_len = 1, split_print=0;
-    char comp_str[SINGLE_CHAR_STR_LEN];
-    comp_str[1] = '\0';
-
 
     // Traverse the model to map out prompt
     for(int i=0; i<prompt_len; i+=increment_len) {
@@ -457,12 +455,10 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
         printf("...");
     }
     // We are now at a state corresponding to the final character of the prompt
-    int highest_freq;
     node_t *chosen_output;
     
     // Now we can generate the output based on the prediction
     while(curr_state->outputs!=NULL) {
-	    highest_freq = 0;
         // Find the output state with the highest frequency
         if(curr_state->outputs!=NULL) {
             chosen_output = curr_output = curr_state->outputs->head;
@@ -548,14 +544,14 @@ free_state(state_t *curr_state) {
    Returns: 1 if compressible, 0 if not.
 */
 int
-is_compressible(state_t *x) {
+is_compressible(state_t *x, state_t *y) {
     
     // If `x` state has more than 1 output, it's not compressible
-    if(x->outputs==NULL || x->outputs->head != x->outputs->tail) {
+    if(x->outputs->head != x->outputs->tail) {
         return 0;
     }
+
     // If 'y' has no output states, it's not compressible
-    state_t *y = x->outputs->head->state;
     if(y == NULL || y->outputs == NULL) {
         return 0;
     }
@@ -569,61 +565,78 @@ is_compressible(state_t *x) {
    Parameters: automaton_t* `model`: pointer to the automaton
    Returns: void
 */
-void
+int
 perform_compression(automaton_t *model, int *num_states, int *freq_count) {
 
-    state_t *x, *y;
-    node_t *curr_output, *chosen_output;
-    int x_str_len, curr_str_len, freq_sum = 0;
+    state_t *x, *y, *prev_state;
+    node_t *chosen_output, *curr_output;
+    int x_str_len, curr_str_len, freq_sum, visited_sum, out_sum;
     char *new_str;
+    x = model->ini;
+    // TODO:
 
-    x = y = model->ini;
-    
-    // Loop while there are outputs from the current state
+    // Traverse through model until compression state is satisfied
+        // Choose the correct output from the current state
+            // Ignore visited (compressed) states
+            // Pick the output with the smallest ASCII value
+        
+        // Go to that state
+
+    // Perform compression on the desired states
+        // Check if the current x, y are compressible
+        // Repeat choosing correct output if not
+
+    // Traverse while we can choose outputs from the current state
     while(x->outputs != NULL) {
-        // Initialise output search
+        visited_sum = out_sum = 0;
+        // Choose the correct output from the current state
         chosen_output = curr_output = x->outputs->head;
-        /* Find an output that 1. Leads to a possible compression 2. has the 
-           smallest ASCII value label. */
         while(curr_output != NULL) {
-            // Skip output if it has been visited
-            if (curr_output->state->visited == 1) {
-                if(chosen_output == curr_output) {
-                    chosen_output = curr_output->next;
+            out_sum++;
+            printf("x[%d], y[%d]\n", x->id, curr_output->state->id);
+            // Completely ignore already visited states (don't allow selection)
+            if(curr_output->state->visited == 1) {
+                visited_sum++;
+                curr_output = curr_output->next;
+                if(curr_output != NULL) {
+                    chosen_output = curr_output;
                 }
+                continue;
+            }
+            // Skip outputs that have 'greater' labels
+            if(strcmp(curr_output->str, chosen_output->str) > 0) {
                 curr_output = curr_output->next;
                 continue;
             }
-            // Skip output if it has a greater label than the chosen output
-            if (strcmp(curr_output->str, chosen_output->str) > 0) {
-                curr_output = curr_output->next;
-                continue;
-            }
-            // We now have a candidate output
-            chosen_output = curr_output;
             
-            // Go to the next output
+            // We now have the state we want to traverse to
+            chosen_output = curr_output;
             curr_output = curr_output->next;
         }
-        if(chosen_output==NULL) {
-            return;
-        }
-        // We have now chosen the state to traverse to
-        x = y;
+        printf("out: %d, vis: %d\n", out_sum, visited_sum);
         y = chosen_output->state;
-        printf("Compressing x[%d], y[%d]\n", x->id, y->id);
-        // Check if compression condition is met
-        if(is_compressible(x)) {
-            // Update the automaton's frequency and state counts
+        /* If all outputs from the current state have been visited, mark it
+           and iterate again */
+        if(out_sum == visited_sum) {
+            printf("Detected compressed branch at x[%d]\n", x->id);
+            x->visited = 1;
+            return 1;
+        }
+
+
+        printf("Compression test at x[%d], y[%d]\n", x->id, y->id);
+        // Now attempt to compress current state
+        if(is_compressible(x, y)) {
+
             *num_states -= 1;
             *freq_count -= y->freq;
             // Concatenate the transition strings of y to x's transition string
             x_str_len = strlen(x->outputs->head->str);
             curr_output = y->outputs->head;
+            freq_sum = 0;
+            // ACTUALLY PERFORM THE COMPRESSION
             while(curr_output != NULL) {
                 freq_sum += curr_output->state->freq;
-                
-
                 // Create a new memory buffer for the concatenated string
                 curr_str_len = strlen(curr_output->str);
                 new_str = (char*)malloc(sizeof(char) * 
@@ -635,24 +648,32 @@ perform_compression(automaton_t *model, int *num_states, int *freq_count) {
                 free(curr_output->str);
                 // Point current output to the new string
                 curr_output->str = new_str;
+                printf("'%s' ", curr_output->str);
                 // Go to the next output
                 curr_output = curr_output->next;
             }
+            printf("\n");
             // Set x's outputs to the updated `y` outputs
             free(x->outputs->head->str);
             x->outputs = y->outputs;
             // Check if the end of that 'compression path' has been reached
-            if(freq_sum == 0) {
+            if(freq_sum == 0 || y->visited == 1) {
+                printf("setting state[%d] to visited, prev = [%d]\n", x->id, prev_state->id);
                 x->visited = 1;
+                
             }
 
             // Free `y` state and return
             free(y);
-            return;
+            return 0;
         }
+        
+        prev_state = x;
         x = y;
+        
+        
     }
-
+    return 0;
 }
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
