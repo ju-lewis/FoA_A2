@@ -54,6 +54,11 @@
 
 #define CRTRNC '\r'                             // carriage return character
 #define SINGLE_CHAR_STR_LEN 2
+#define SMALLEST_COMPRESSIBLE_MODEL 2
+#define REVERSE_TRAVERSAL 1
+#define REGULAR_TRAVERSAL 0
+#define CONTINUE 0
+#define STOP 1
 
 /* TYPE DEFINITIONS ----------------------------------------------------------*/
 typedef struct state state_t;   // a state in an automaton
@@ -86,11 +91,17 @@ typedef struct {                // an automaton consists of
 char *read_until_blank(char *input, int *input_len);
 char* read_statement(char *str, int *state_len);
 void init_state(state_t *new, int *num_states);
-void insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states);
+void insert_statement(automaton_t *model, char *statement, int statement_len, 
+    int *num_states, int *freq_count);
 list_t* insert_at_tail(list_t *list, char *str, state_t *next_state);
 void free_state(state_t *curr_state);
+node_t *greatest_output(node_t *current_node);
 void make_prediction(automaton_t *model, char *prompt, int prompt_len);
-void perform_compression(automaton_t *model);
+void read_prompts(automaton_t *model);
+int is_compressible(state_t *x, state_t *y);
+void build_dfs_array(state_t *model, state_t **dfs_array, int *idx);
+void perform_compression(state_t **dfs_array, int init_num_states, 
+    int *num_states, int *freq_count);
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
 int mygetchar(void);            // getchar() that skips carriage returns
@@ -107,9 +118,10 @@ main(int argc, char *argv[]) {
     model.ini = &initial_state;
 
     /*============================= STAGE 0 ==================================*/
+    printf(SDELIM, 0);
     // Assign initial string for current statement
     int statement_len;
-    int num_statements = 0, num_chars = 0;
+    int num_statements = 0, num_chars = 0, freq_count = 0;
     char *input;
 
     // Read statement from user into `input`
@@ -123,7 +135,7 @@ main(int argc, char *argv[]) {
         // Add training statement to `model`
         num_statements++;
         num_chars += statement_len;
-        insert_statement(&model, input, statement_len, &num_states);
+        insert_statement(&model, input, statement_len, &num_states, &freq_count);
 
         // Free previous input pointer and read from user again
         free(input);
@@ -138,77 +150,61 @@ main(int argc, char *argv[]) {
     }
     input = NULL;
     // Training complete, print model details
-    printf(SDELIM, 0);
     printf(NOSFMT, num_statements);
     printf(NOCFMT, num_chars);
     printf(NPSFMT, num_states);
+    printf("sdfishisfh freqs: %d\n", freq_count);
     /*=========================== END STAGE 0 ================================*/
     
     /*============================= STAGE 1 ==================================*/
     printf(SDELIM, 1);
-    // Read statement from user into `input`
-    input = (char*)malloc(sizeof(char));
-    assert(input!=NULL);
-    input = read_statement(input, &statement_len);
-
-    // Read statements until blank line is read
-    while(statement_len > 0) {
-
-        // Make prediction using model
-        make_prediction(&model, input, statement_len);
-
-        // Free previous input pointer and read from user again
-        free(input);
-        input = (char*)malloc(sizeof(char));
-        assert(input!=NULL);
-        input = read_statement(input, &statement_len);
-        
-    }
-    // Destroy input pointer if it's not to be reassigned.
-    if(input!=NULL) {
-        free(input);
-    }
-    input = NULL;
+    read_prompts(&model);
     /*=========================== END STAGE 1 ================================*/
 
     /*============================= STAGE 2 ==================================*/
     printf(SDELIM, 2);
     // Read number of compression steps to perform
-    int comp_steps;
+    int comp_steps, init_num_states = num_states;
     scanf("%d", &comp_steps);
     // Remove '\n' from stdin input buffer
     getchar();
+    
+    // Malloc an array of pointers to states to hold the entire automaton
+    state_t **dfs_array = (state_t**)malloc(sizeof(state_t*) * num_states);
+    assert(dfs_array!=NULL);
+    int curr_idx = 0;
+    build_dfs_array(model.ini, dfs_array, &curr_idx);
+    // TEMP #####################################################################
+    for(int i=0; i<num_states; i++) {
+        printf("[%d] ", dfs_array[i]->id);
+    }
+    printf("\n");
+    
+    
+    // TEMP #####################################################################
     // Perform compression steps
     for(int i=0; i<comp_steps; i++) {
-        perform_compression(&model);
+        printf("Compression step: %d\n", i+1);
+        perform_compression(dfs_array, init_num_states, &num_states, &freq_count);
+        for(int j=0; j<num_states; j++) {
+            if(dfs_array[j] != NULL) {
+                printf("[%d] ", dfs_array[j]->id);
+            }
+        }
+        printf("\n");
     }
-    // Read statement from user into `input`
-    input = (char*)malloc(sizeof(char));
-    assert(input!=NULL);
-    input = read_statement(input, &statement_len);
+    printf(NPSFMT, num_states);
+    printf(TFQFMT, freq_count);
+    printf(MDELIM);
+    // Now query the model again
+    read_prompts(&model);
 
-    // Read statements until blank line is read
-    while(statement_len > 0) {
-
-        // Make prediction using model
-        make_prediction(&model, input, statement_len);
-
-        // Free previous input pointer and read from user again
-        free(input);
-        input = (char*)malloc(sizeof(char));
-        assert(input!=NULL);
-        input = read_statement(input, &statement_len);
-    }
-    // Destroy input pointer if it's not to be reassigned.
-    if(input!=NULL && statement_len > 0) {
-        printf("Statement length: %d\n", statement_len);
-        free(input);
-    }
-    input = NULL;
     /*=========================== END STAGE 2 ================================*/
+    printf(THEEND);
     printf("Freeing model\n");
 
     // Free model and exit :)
+    free(dfs_array);
     free_state(model.ini);
     printf("Done freeing model\n");
 
@@ -227,7 +223,7 @@ init_state(state_t *new, int *num_states) {
     new->id = id;
     new->visited = 0;
     new->outputs = NULL;
-
+    
     id++;
 }
 
@@ -278,7 +274,7 @@ read_statement(char *str, int *state_len) {
    Returns: void
 */
 void
-insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states) {
+insert_statement(automaton_t *model, char *statement, int statement_len, int *num_states, int *freq_count) {
     
     // Initialise current state being checked
     state_t *curr_state = model->ini, *next_state;
@@ -295,11 +291,11 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
     // Iterate through characters in the input
     for(int i=0; i<statement_len; i++) {
         curr_state->freq++;
+        *freq_count += 1;
         comp_str[0] = statement[i];
         match_found = 0;
         // Check if there are any outputs from the current state
         if(curr_state->outputs==NULL) {
-            //printf("No outputs from state[%d], creating one with id=%d\n", curr_state->id, curr_state->id + 1);
             // No outputs, we must create one
             // Malloc list
             output_list = (list_t*)malloc(sizeof(list_t));
@@ -389,211 +385,339 @@ insert_at_tail(list_t *list, char *str, state_t *next_state) {
 	return list;
 }
 
+node_t*
+greatest_output(node_t *current_node) {
+    // Initialise chosen output
+    node_t *chosen_output = current_node;
+    int highest_freq = chosen_output->state->freq;
+
+    while(current_node!=NULL) {
+        
+        //printf("Comparing current:%s and chosen:%s\n", current_node->str, chosen_output->str);
+        if(current_node->state->freq > highest_freq) {
+            // Greater frequency found
+
+            highest_freq = current_node->state->freq;
+            chosen_output = current_node;
+
+
+        } else if (current_node->state->freq == highest_freq) {
+            // Equal frequncy found, pick the 'greater' output
+            
+            if(strcmp(current_node->str, chosen_output->str) > 0) {
+                highest_freq = current_node->state->freq;
+                chosen_output = current_node;
+            }
+        }
+        // Go to next output
+        current_node = current_node->next;
+    }
+    return chosen_output;
+}
+
 void
 make_prediction(automaton_t *model, char *prompt, int prompt_len) {
 
     // Define initial variables
     state_t *curr_state = model->ini;
     node_t *curr_output;
-    int output_found;
-    char comp_str[SINGLE_CHAR_STR_LEN];
+    int output_found, increment_len = 1, split_print=0;
 
-    comp_str[1] = '\0';
     // Traverse the model to map out prompt
-    for(int i=0; i<prompt_len; i++) {
-        printf("Checking '%c' against the outputs of state[%d]\n", prompt[i], curr_state->id);
-        comp_str[0] = prompt[i];
-        output_found = 0;
-        // Terminate response generation if end of model is reached
-        if(curr_state->outputs==NULL) {
-            printf("state[%d] has no outputs!\n", curr_state->id);
-	    printf("...\n");
+    for(int i=0; i<prompt_len; i+=increment_len) {
+        increment_len=1;
+        // Handle reaching end of model - cancel generation
+        if(curr_state->outputs == NULL) {
+            printf("...\n");
             return;
         }
 
-        // Iterate through the outputs of the current state
+        // Handle reaching end of prompt before the end of the model
+        output_found = 0;
         curr_output = curr_state->outputs->head;
-        while(curr_output) {
-            printf("Checking: %s\n", curr_output->str);
-            // If output character doesn't match current character, go next
-            if(strcmp(comp_str, curr_output->str)) {
-                curr_output = curr_output->next;
-            } else {
-                // Character does match, traverse to that state
-                putchar(prompt[i]);
+        while(curr_output!=NULL) {
+            
+            //printf("Checking if %s goes into %s\n", curr_output->str, prompt + i);
+            // Check if transition string goes into the correct spot in prompt
+            if(strstr(prompt + i, curr_output->str) == prompt + i) {
+                
+                printf("%s", curr_output->str);
+                // Increment pointer into prompt by transition string length
+                increment_len = strlen(curr_output->str);
+                output_found = 1;
+                // Go to chosen automaton state
                 curr_state = curr_output->state;
-                printf("Output to state[%d] matched.\n", curr_state->id);
-                // Break from inner loop only
+                break;
+            } else if(strstr(curr_output->str, prompt + i) ==  curr_output->str) {
+                /* Handle the prompt ending during the transition string,
+                   we want to start generation mid-way through prompt */
+                
+                curr_output = greatest_output(curr_output);
+                printf("%s...%s", prompt + i, curr_output->str + prompt_len - i);
+                
+                curr_state = curr_output->state;
+                // If the end of the model was reached - we can't generate more
+                if(curr_state==NULL || curr_state->outputs==NULL) {
+                    
+                    putchar('\n');
+                    return;
+                }
+                split_print = 1;
                 output_found = 1;
                 break;
             }
+            curr_output = curr_output->next;
         }
+
         if(!output_found) {
-            printf("None match.\n");
-            // No outputs from the state matched the character, terminate gen
-	    printf("%c...\n", prompt[i]);
+            // The prompt deviates from the automaton - cancel generation
+            //printf("NO OUTPUTS...\n");
             return;
         }
     }
-    printf("Traversal succeeded at state[%d]\n", curr_state->id);
-    printf("...");
+
+    if(!split_print) {
+        printf("...");
+    }
     // We are now at a state corresponding to the final character of the prompt
-    // Malloc initial memory to store response
-    
-    int highest_freq;
     node_t *chosen_output;
     
     // Now we can generate the output based on the prediction
     while(curr_state->outputs!=NULL) {
-	highest_freq = 0;
         // Find the output state with the highest frequency
         if(curr_state->outputs!=NULL) {
             chosen_output = curr_output = curr_state->outputs->head;
-        } 
-        while(curr_output!=NULL) {
-            if(curr_output->state->freq > highest_freq) {
-
-                // Greater frequency found
-                highest_freq = curr_output->state->freq;
-                chosen_output = curr_output;
-            } else if (curr_output->state->freq == highest_freq) {
-                // Equal frequncy found, pick the 'greater' output
-                if(strcmp(chosen_output->str, curr_output->str) < 0) {
-	                highest_freq = curr_output->state->freq;
-			        chosen_output = curr_output;
-		        }
-            }
-
-            if (curr_output->state->freq == 0) {
-                // End of model reached
-                printf("%s\n", curr_output->str);
-                return;
-            }
-            // Go to next output
-            curr_output = curr_output->next;
         }
+        chosen_output = greatest_output(curr_output);
+        if(chosen_output == NULL) {return;}
         // Now we have chosen the state we want to traverse to
         curr_state = chosen_output->state;
-        putchar(chosen_output->str[0]);
-        printf("Chose output state[%d]\n", curr_state->id);
-        printf("Does state[%d] have any outputs? %s\n", curr_state->id, curr_state->outputs!=NULL ? "yes" : "no");
+        printf("%s", chosen_output->str);
+        //printf("Chose output state[%d]\n", curr_state->id);
+        //printf("Does state[%d] have any outputs? %s\n", curr_state->id, curr_state->outputs!=NULL ? "yes" : "no");
     }
     putchar('\n');
 }
 
-/* Recursively frees all automaton states stemming from input state
-   Parameters: state_t* `curr_state` pointer to the initial state
+/* Reads prompts from user until a blank line or EOF is read
+   Parameters: `model` pointer to the automaton to query
    Returns: void
+*/
+void
+read_prompts(automaton_t *model) {
+    char *input;
+    int statement_len;
+
+    // Read statement from user into `input`
+    input = (char*)malloc(sizeof(char));
+    assert(input!=NULL);
+    input = read_statement(input, &statement_len);
+
+    // Read statements until blank line is read
+    while(statement_len > 0) {
+
+        // Make prediction using model
+        make_prediction(model, input, statement_len);
+
+        // Free previous input pointer and read from user again
+        free(input);
+        input = (char*)malloc(sizeof(char));
+        assert(input!=NULL);
+        input = read_statement(input, &statement_len);
+        
+    }
+    // Destroy input pointer if it's not to be reassigned.
+    if(input!=NULL) {
+        free(input);
+    }
+    input = NULL;
+}
+
+/* Frees all dynamic memory associated with a single state
+   Parameters: `curr_state` pointer to the state to be freed
+   Returns: CONTINUE flag, to keep recursivly freeing the automaton
 */
 void
 free_state(state_t *curr_state) {
-    // Base case - no more outputs
-    if(curr_state->outputs==NULL) {
-        if(curr_state!=NULL) {
-            free(curr_state);
-            curr_state = NULL;
+
+    if(curr_state == NULL) {return;}
+    // Free all outputs
+    if(curr_state->outputs!=NULL){
+        node_t *curr_node = curr_state->outputs->head, *next_node;
+        while(curr_node!=NULL) {
+            free(curr_node->str);
+            // Recurse on all valid outputs
+            if(curr_node->state!=NULL) {
+                free_state(curr_node->state);
+            }
+            next_node = curr_node->next;
+            free(curr_node);
+            curr_node = next_node;
         }
+        
+        // Finally, free the current state
+        free(curr_state->outputs);
+    }
+    if(curr_state->id!=0) {
+        free(curr_state);
+    }
+    
+}
+
+void
+perform_compression(state_t **dfs_array, int init_num_states, int *num_states, int *freq_count) {
+    
+    if(init_num_states < SMALLEST_COMPRESSIBLE_MODEL) {
         return;
     }
-
-    // Recursive case - call free on all output states
-    node_t *current_node = curr_state->outputs->head;
-    while(current_node!=NULL) {
-        if(current_node->str!=NULL) {
-            free(current_node->str);
+    int increment, curr_str_len, x_str_len;
+    char *new_str;
+    state_t *x, *y;
+    node_t *curr_output;
+    
+    // Loop through the entire array length
+    for(int i=0; i<init_num_states; i++) {
+        
+        increment = 1;
+        // If x is going to be NULL, shift selection along by 1 digit
+        if(dfs_array[i]==NULL) {
+            increment--;
+            continue;
         }
-        if(current_node->state!=NULL) {
-            free_state(current_node->state);
-            current_node = current_node->next;
+        // Assign x state
+        x = dfs_array[i];
+        // Assign y if in bounds
+        while(i + increment < init_num_states) {
+            // Assign `y` to the value following `x` EXCLUDING NULLs
+            if(dfs_array[i + increment] == NULL) {
+                increment++;
+            } else {
+                y = dfs_array[i + increment];
+                break;
+            }
+
+        }
+        /* We can now check if `y` consecutively follows `x`, excluding NULLs
+           where NULLs represent previously compressed and removed states */
+        if(y->id == x->id + increment) {
+            // `x` and `y` lead to a compression state, check for the condition
+            if(is_compressible(x, y)) {
+                curr_output = y->outputs->head;
+                //printf("hdsisdhifsdhfidshfihsd\n");
+                // Actually do the compression
+                while(curr_output != NULL) {
+                    // Create a new memory buffer for the concatenated string
+                    curr_str_len = strlen(curr_output->str);
+                    new_str = (char*)malloc(sizeof(char) * 
+                        (x_str_len + curr_str_len + 1));
+                    // Copy x's transition string into the buffer and add y's string
+                    strcpy(new_str, x->outputs->head->str);
+                    strcat(new_str, curr_output->str);
+                    // Free the old string
+                    free(curr_output->str);
+                    // Point current output to the new string
+                    curr_output->str = new_str;
+                    printf("'%s' ", curr_output->str);
+                    // Go to the next output
+                    curr_output = curr_output->next;
+                }
+                printf("\n");
+                // Set x's outputs to the updated `y` outputs
+                free(x->outputs->head->str);
+                x->outputs = y->outputs;
+
+                // Now set the array y value to NULL (it was already compressed)
+                dfs_array[i + increment] = NULL;
+                *num_states -= 1;
+                *freq_count -= y->freq;
+                free(y);
+                return;
+            }
         }
     }
-    // Now free current state if it's not in stack memory
-    if(curr_state!=NULL){
-        if(curr_state->outputs!=NULL) {
-            free(curr_state->outputs);
+
+}
+
+/* Takes a state_t pointer array, and inserts pointers to all automaton states
+   in depth-first lowest ASCII value order
+*/
+void
+build_dfs_array(state_t *curr_state, state_t** dfs_array, int *idx) {
+    printf("Adding state[%d] to index %d\n", curr_state->id, *idx);
+    // Add current state pointer to `dfs_array` at current `idx`
+    dfs_array[*idx] = curr_state;
+    curr_state->visited = 1;
+    // Handle base case (leaf state)
+    if(curr_state->outputs == NULL) {
+        return;
+    }
+    node_t *curr_output, *chosen_output;
+    int output_count, visited_count, recurse_on_outputs = 1, curr_visited;
+
+    // Add all branching states to `dfs_array`
+    while(recurse_on_outputs) {
+        output_count = visited_count = 0;
+        
+        chosen_output = curr_output = curr_state->outputs->head;
+        // Find the output with the smallest ASCII value
+        while(curr_output != NULL) {
+            curr_visited = 0;
+            output_count++;
+            printf("Checking output to state[%d]: ", curr_output->state->id);
+            // Skip already visited outputs
+            if(curr_output->state->visited == 1) {
+                visited_count++;
+                curr_visited = 1;
+                printf("Visited!\n");
+                
+            }
+            // Ensure chosen state has not been visited
+            if(chosen_output->state->visited == 1) {
+                chosen_output = chosen_output->next;
+            }
+
+            // Compare current output with currently chosen output
+            if(!curr_visited && strcmp(curr_output->str, chosen_output->str) < 0) {
+                // If current output is smaller, choose it
+                chosen_output = curr_output;
+            } else 
+            curr_output = curr_output->next;
+            
         }
-        if(curr_state->id != 0) {
-            free(curr_state);
-            curr_state = NULL;
+        // Exit both loops if all outputs have been visited
+        if(output_count == visited_count) {
+            printf("All outputs visited\n");
+            chosen_output = NULL;
+            recurse_on_outputs = 0;
+            break;
         }
+        
+        // We now have the smallest available (by ASCII value) output
+        // Mark the resulting state as visited and traverse to it
+        
+        *idx += 1;
+        build_dfs_array(chosen_output->state, dfs_array, idx);
     }
 }
 
-/* Performs a single compression pass on the automaton 
-   Parameters: automaton_t* `model`: pointer to the automaton
-   Returns: void
+/* Checks whether the compression condition is statisfied from a given state
+   Parameters: `x` the first state to check from (corresponds to x in the rules)
+   Returns: 1 if compressible, 0 if not.
 */
-void
-perform_compression(automaton_t *model) {
+int
+is_compressible(state_t *x, state_t *y) {
+    
+    // If `x` state has more than 1 output, it's not compressible
+    if(x->outputs->head != x->outputs->tail) {
+        return 0;
+    }
 
-    state_t *curr_state, *next_state;
-    node_t *chosen_output, *curr_output;
-    int condition_met=0, output_strlen, curr_len;
-    // Traverse through the model (depth-first lowest ASCII value)
-    next_state = curr_state = model->ini;
-
-    while(next_state!=NULL) {
-
-        if(next_state->outputs!=NULL) {
-            curr_output = next_state->outputs->head;
-            chosen_output = curr_output;
-            // Scan through outputs to find 'lowest' value
-            while (curr_output->next) {
-                if(strcmp(curr_output->str, chosen_output->str) < 0) {
-                    chosen_output = curr_output;
-                }
-                curr_output = curr_output->next;
-            }
-            
-        } else {
-            break;
-        }
-        // We now have the smallest labelled output from the previous state
-        curr_state = next_state;
-        next_state = chosen_output->state;
-
-        // Check if compression condition is met
-        if(curr_state->outputs->head == curr_state->outputs->tail && next_state->outputs!=NULL) {
-            condition_met = 1;
-            printf("Compression condition met at x[%d], y[%d]\n", curr_state->id, next_state->id);
-            // Concatenate the output strings of `curr_state` to `next_state`
-            curr_output = next_state->outputs->head;
-            output_strlen = strlen(curr_state->outputs->head->str);
-            printf("x str: %s (length=%d)\n", curr_state->outputs->head->str, output_strlen);
-            while(curr_output!=NULL) {
-                // Increase length of current output str by `outout_strlen`
-                curr_len = strlen(curr_output->str) + output_strlen;
-                printf("Increasing curr_len from %ld to ", strlen(curr_output->str));
-                printf("%d\n", curr_len);
-                curr_output->str = (char*)realloc(curr_output->str, 
-                    curr_len + 1);
-                printf("Adding \"%s\" to \"%s\" to produce: ", curr_output->str, curr_state->outputs->head->str);
-                // Copy current string to end of buffer
-                memmove(curr_output->str+output_strlen, curr_output->str, 
-                    curr_len);
-                curr_output->str[curr_len] = '\0';
-
-                // Prepend previous state's output str
-                memmove(curr_output->str, curr_state->outputs->head->str,
-                    output_strlen);
-                printf("\"%s\"\n", curr_output->str);
-                // Go to next output
-                curr_output = curr_output->next;
-            }
-            
-            // Free the outputs of `curr_state`
-            free(curr_state->outputs->head->str);
-            free(curr_state->outputs);
-            // Link the updated outputs to 'curr_state'
-            curr_state->outputs = next_state->outputs;
-            // Free `next_state`
-            free(next_state);
-
-            break;
-        }
+    // If 'y' has no output states, it's not compressible
+    if(y == NULL || y->outputs == NULL) {
+        return 0;
     }
     
-    
+    return 1;
 }
 
 /* USEFUL FUNCTIONS ----------------------------------------------------------*/
