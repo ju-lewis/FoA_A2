@@ -598,7 +598,7 @@ perform_compression(state_t **dfs_array, int init_num_states, int *num_states, i
                 
                 if(x->outputs==NULL) {continue;}
                 curr_output = y->outputs->head;
-                //printf("hdsisdhifsdhfidshfihsd\n");
+
                 // Actually do the compression
                 while(curr_output != NULL) {
                     // Create a new memory buffer for the concatenated string
@@ -612,11 +612,9 @@ perform_compression(state_t **dfs_array, int init_num_states, int *num_states, i
                     free(curr_output->str);
                     // Point current output to the new string
                     curr_output->str = new_str;
-                    //printf("'%s' ", curr_output->str);
                     // Go to the next output
                     curr_output = curr_output->next;
                 }
-                //printf("\n");
                 // Set x's outputs to the updated `y` outputs
                 free(x->outputs->head->str);
                 x->outputs = y->outputs;
@@ -628,10 +626,8 @@ perform_compression(state_t **dfs_array, int init_num_states, int *num_states, i
                 free(y);
                 return;
             }
-            //printf("x and y are NOT compressible\n");
         }
     }
-
 }
 
 /* Takes a state_t pointer array, and inserts pointers to all automaton states
