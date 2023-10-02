@@ -160,7 +160,7 @@ main(int argc, char *argv[]) {
     printf(SDELIM, 1);
     read_prompts(&model);
     /*=========================== END STAGE 1 ================================*/
-
+    
     /*============================= STAGE 2 ==================================*/
     printf(SDELIM, 2);
     // Read number of compression steps to perform
@@ -175,23 +175,23 @@ main(int argc, char *argv[]) {
     int curr_idx = 0;
     build_dfs_array(model.ini, dfs_array, &curr_idx);
     // TEMP #####################################################################
-    for(int i=0; i<num_states; i++) {
+    /*for(int i=0; i<num_states; i++) {
         printf("[%d] ", dfs_array[i]->id);
     }
-    printf("\n");
+    printf("\n");*/
     
     
     // TEMP #####################################################################
     // Perform compression steps
     for(int i=0; i<comp_steps; i++) {
-        printf("Compression step: %d\n", i+1);
+        //printf("Compression step: %d\n", i+1);
         perform_compression(dfs_array, init_num_states, &num_states, &freq_count);
-        for(int j=0; j<num_states; j++) {
+        /*for(int j=0; j<num_states; j++) {
             if(dfs_array[j] != NULL) {
                 printf("[%d] ", dfs_array[j]->id);
             }
         }
-        printf("\n");
+        printf("\n");*/
     }
     printf(NPSFMT, num_states);
     printf(TFQFMT, freq_count);
@@ -579,13 +579,15 @@ perform_compression(state_t **dfs_array, int init_num_states, int *num_states, i
     for(int i=0; i<init_num_states; i++) {
         
         increment = 1;
-        // If x is going to be NULL, shift selection along by 1 digit
+        // If x is going to be NULL, shift selection along by 1
         if(dfs_array[i]==NULL) {
             increment--;
             continue;
         }
+        
         // Assign x state
         x = dfs_array[i];
+
         // Assign y if in bounds
         while(i + increment < init_num_states) {
             // Assign `y` to the value following `x` EXCLUDING NULLs
@@ -595,13 +597,19 @@ perform_compression(state_t **dfs_array, int init_num_states, int *num_states, i
                 y = dfs_array[i + increment];
                 break;
             }
-
         }
+
+
         /* We can now check if `y` consecutively follows `x`, excluding NULLs
            where NULLs represent previously compressed and removed states */
         if(y->id == x->id + increment) {
+
             // `x` and `y` lead to a compression state, check for the condition
             if(is_compressible(x, y)) {
+
+                x_str_len = strlen(x->outputs->head->str);
+                
+                if(x->outputs==NULL) {continue;}
                 curr_output = y->outputs->head;
                 //printf("hdsisdhifsdhfidshfihsd\n");
                 // Actually do the compression
@@ -610,18 +618,18 @@ perform_compression(state_t **dfs_array, int init_num_states, int *num_states, i
                     curr_str_len = strlen(curr_output->str);
                     new_str = (char*)malloc(sizeof(char) * 
                         (x_str_len + curr_str_len + 1));
-                    // Copy x's transition string into the buffer and add y's string
+                    // Copy x's transition string into the buffer and add y's string 
                     strcpy(new_str, x->outputs->head->str);
                     strcat(new_str, curr_output->str);
                     // Free the old string
                     free(curr_output->str);
                     // Point current output to the new string
                     curr_output->str = new_str;
-                    printf("'%s' ", curr_output->str);
+                    //printf("'%s' ", curr_output->str);
                     // Go to the next output
                     curr_output = curr_output->next;
                 }
-                printf("\n");
+                //printf("\n");
                 // Set x's outputs to the updated `y` outputs
                 free(x->outputs->head->str);
                 x->outputs = y->outputs;
@@ -633,6 +641,7 @@ perform_compression(state_t **dfs_array, int init_num_states, int *num_states, i
                 free(y);
                 return;
             }
+            //printf("x and y are NOT compressible\n");
         }
     }
 
@@ -643,7 +652,7 @@ perform_compression(state_t **dfs_array, int init_num_states, int *num_states, i
 */
 void
 build_dfs_array(state_t *curr_state, state_t** dfs_array, int *idx) {
-    printf("Adding state[%d] to index %d\n", curr_state->id, *idx);
+    //printf("Adding state[%d] to index %d\n", curr_state->id, *idx);
     // Add current state pointer to `dfs_array` at current `idx`
     dfs_array[*idx] = curr_state;
     curr_state->visited = 1;
@@ -663,12 +672,12 @@ build_dfs_array(state_t *curr_state, state_t** dfs_array, int *idx) {
         while(curr_output != NULL) {
             curr_visited = 0;
             output_count++;
-            printf("Checking output to state[%d]: ", curr_output->state->id);
+            //printf("Checking output to state[%d]: ", curr_output->state->id);
             // Skip already visited outputs
             if(curr_output->state->visited == 1) {
                 visited_count++;
                 curr_visited = 1;
-                printf("Visited!\n");
+                //printf("Visited!\n");
                 
             }
             // Ensure chosen state has not been visited
@@ -686,7 +695,7 @@ build_dfs_array(state_t *curr_state, state_t** dfs_array, int *idx) {
         }
         // Exit both loops if all outputs have been visited
         if(output_count == visited_count) {
-            printf("All outputs visited\n");
+            //printf("All outputs visited\n");
             chosen_output = NULL;
             recurse_on_outputs = 0;
             break;
@@ -707,8 +716,10 @@ build_dfs_array(state_t *curr_state, state_t** dfs_array, int *idx) {
 int
 is_compressible(state_t *x, state_t *y) {
     
+    if(x==NULL || x->outputs==NULL) {return 0;}
+
     // If `x` state has more than 1 output, it's not compressible
-    if(x->outputs->head != x->outputs->tail) {
+    if(x->outputs != NULL && x->outputs->head != x->outputs->tail) {
         return 0;
     }
 
