@@ -153,7 +153,6 @@ main(int argc, char *argv[]) {
     printf(NOSFMT, num_statements);
     printf(NOCFMT, num_chars);
     printf(NPSFMT, num_states);
-    printf("sdfishisfh freqs: %d\n", freq_count);
     /*=========================== END STAGE 0 ================================*/
     
     /*============================= STAGE 1 ==================================*/
@@ -174,24 +173,12 @@ main(int argc, char *argv[]) {
     assert(dfs_array!=NULL);
     int curr_idx = 0;
     build_dfs_array(model.ini, dfs_array, &curr_idx);
-    // TEMP #####################################################################
-    /*for(int i=0; i<num_states; i++) {
-        printf("[%d] ", dfs_array[i]->id);
-    }
-    printf("\n");*/
-    
-    
-    // TEMP #####################################################################
+
     // Perform compression steps
     for(int i=0; i<comp_steps; i++) {
-        //printf("Compression step: %d\n", i+1);
+
         perform_compression(dfs_array, init_num_states, &num_states, &freq_count);
-        /*for(int j=0; j<num_states; j++) {
-            if(dfs_array[j] != NULL) {
-                printf("[%d] ", dfs_array[j]->id);
-            }
-        }
-        printf("\n");*/
+
     }
     printf(NPSFMT, num_states);
     printf(TFQFMT, freq_count);
