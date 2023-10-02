@@ -115,6 +115,7 @@ main(int argc, char *argv[]) {
     model.ini = &initial_state;
 
     /*============================= STAGE 0 ==================================*/
+    printf(SDELIM, 0);
     // Assign initial string for current statement
     int statement_len;
     int num_statements = 0, num_chars = 0, freq_count = 0;
@@ -146,7 +147,6 @@ main(int argc, char *argv[]) {
     }
     input = NULL;
     // Training complete, print model details
-    printf(SDELIM, 0);
     printf(NOSFMT, num_statements);
     printf(NOCFMT, num_chars);
     printf(NPSFMT, num_states);
@@ -177,6 +177,7 @@ main(int argc, char *argv[]) {
     read_prompts(&model);
 
     /*=========================== END STAGE 2 ================================*/
+    printf(THEEND);
     printf("Freeing model\n");
 
     // Free model and exit :)
@@ -588,6 +589,7 @@ perform_compression(automaton_t *model, int *num_states, int *freq_count) {
 
     // Traverse while we can choose outputs from the current state
     while(x->outputs != NULL) {
+        printf("state[%d] freq=%d\n", x->id, x->freq);
         visited_sum = out_sum = 0;
         // Choose the correct output from the current state
         chosen_output = curr_output = x->outputs->head;
@@ -620,7 +622,11 @@ perform_compression(automaton_t *model, int *num_states, int *freq_count) {
         if(out_sum == visited_sum) {
             printf("Detected compressed branch at x[%d]\n", x->id);
             x->visited = 1;
-            return 1;
+            if(x->id != 0) {
+                return 1;
+            } else {
+                return 0;
+            }
         }
 
 
