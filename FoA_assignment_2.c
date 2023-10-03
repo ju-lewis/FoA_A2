@@ -55,10 +55,7 @@
 #define CRTRNC '\r'                             // carriage return character
 #define SINGLE_CHAR_STR_LEN 2
 #define SMALLEST_COMPRESSIBLE_MODEL 2
-#define REVERSE_TRAVERSAL 1
-#define REGULAR_TRAVERSAL 0
-#define CONTINUE 0
-#define STOP 1
+#define MAX_LINE_LEN 38
 
 /* TYPE DEFINITIONS ----------------------------------------------------------*/
 typedef struct state state_t;   // a state in an automaton
@@ -91,9 +88,10 @@ typedef struct {                // an automaton consists of
 char *read_until_blank(char *input, int *input_len);
 char* read_statement(char *str, int *state_len);
 void init_state(state_t *new, int *num_states);
+node_t *find_matching_output(state_t *curr_state, char *comp_str);
 void insert_statement(automaton_t *model, char *statement, int statement_len, 
     int *num_states, int *freq_count);
-list_t* insert_at_tail(list_t *list, char *str, state_t *next_state);
+list_t *insert_at_tail(list_t *list, char *str, state_t *next_state);
 void free_state(state_t *curr_state);
 node_t *greatest_output(node_t *current_node);
 void make_prediction(automaton_t *model, char *prompt, int prompt_len);
@@ -252,6 +250,31 @@ read_statement(char *str, int *state_len) {
     return str;
 }
 
+node_t*
+find_matching_output(state_t *curr_state, char *comp_str) {
+    node_t *output_node;
+    int match_found = 0;
+    // Early return for leaf states
+    if(curr_state->outputs==NULL){return NULL;}
+    // Traverse list of outputs
+    output_node = curr_state->outputs->head;
+    while(output_node!=NULL) {
+        // Matching string found, return corresponding output
+        if(strstr(output_node->str, comp_str)!=NULL) {
+            match_found = 1;
+            break;
+        } else {
+            // Current out doesn't match, attempt going to next output
+            output_node = output_node->next;
+        }
+    }
+    if(match_found) {
+        return output_node;
+    } else {
+        return NULL;
+    }
+}
+
 /* Takes a training statement and inserts it into the automaton, creating states
    where necessary and incrementing frequencies on already existent states.
    Parameters: automaton_t* `model` pointer to the model to insert to
@@ -308,24 +331,10 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
         } else {
             
             // There are outputs, check if any strs match current char
-            // Traverse list of outputs
-            output_node = curr_state->outputs->head;
-            while(output_node!=NULL) {
-                //printf("Checking statement character '%c' against output with char '%c'\n", statement[i], *(output_node->str));
-                // Matching character found, go to that state
-                if(!strcmp(comp_str, output_node->str)) {
-                    //printf("Character '%c' matches an output from state[%d], traversing to state[%d]\n", statement[i], curr_state->id, output_node->state->id);
-                    curr_state = output_node->state;
-                    match_found = 1;
-                    break;
-                } else {
-                    // Current out doesn't match, attempt going to next output
-                    //printf("    Doesn't match, checking arc at %p\n", output_node->next);
-                    output_node = output_node->next;
-                }
-            }
+            output_node = find_matching_output(curr_state, comp_str);
+            
             // No matches found at all - add a new one for the character
-            if(!match_found) {
+            if(output_node == NULL) {
                 //printf("No matches found for '%c' in outputs from state[%d], creating a new output arc at ", statement[i], curr_state->id);
                 // Initialise next state
                 next_state = (state_t*)malloc(sizeof(state_t));
@@ -341,6 +350,10 @@ insert_statement(automaton_t *model, char *statement, int statement_len, int *nu
                 //printf("%p\n", curr_state->outputs->tail);
                 // Go to newly created state
                 curr_state = curr_state->outputs->tail->state;
+            } else {
+                
+                // There was a matching output - traverse to it
+                curr_state = output_node->state;
             }
         }
     }
@@ -404,86 +417,55 @@ greatest_output(node_t *current_node) {
 
 void
 make_prediction(automaton_t *model, char *prompt, int prompt_len) {
-
-    // Define initial variables
-    state_t *curr_state = model->ini;
-    node_t *curr_output;
-    int output_found, increment_len = 1, split_print=0;
-
-    // Traverse the model to map out prompt
-    for(int i=0; i<prompt_len; i+=increment_len) {
-        increment_len=1;
-        // Handle reaching end of model - cancel generation
-        if(curr_state->outputs == NULL) {
-            printf("...\n");
-            return;
-        }
-
-        // Handle reaching end of prompt before the end of the model
-        output_found = 0;
-        curr_output = curr_state->outputs->head;
-        while(curr_output!=NULL) {
-            
-            //printf("Checking if %s goes into %s\n", curr_output->str, prompt + i);
-            // Check if transition string goes into the correct spot in prompt
-            if(strstr(prompt + i, curr_output->str) == prompt + i) {
-                
-                printf("%s", curr_output->str);
-                // Increment pointer into prompt by transition string length
-                increment_len = strlen(curr_output->str);
-                output_found = 1;
-                // Go to chosen automaton state
-                curr_state = curr_output->state;
-                break;
-            } else if(strstr(curr_output->str, prompt + i) ==  curr_output->str) {
-                /* Handle the prompt ending during the transition string,
-                   we want to start generation mid-way through prompt */
-                
-                curr_output = greatest_output(curr_output);
-                printf("%s...%s", prompt + i, curr_output->str + prompt_len - i);
-                
-                curr_state = curr_output->state;
-                // If the end of the model was reached - we can't generate more
-                if(curr_state==NULL || curr_state->outputs==NULL) {
-                    
-                    putchar('\n');
-                    return;
-                }
-                split_print = 1;
-                output_found = 1;
-                break;
-            }
-            curr_output = curr_output->next;
-        }
-
-        if(!output_found) {
-            // The prompt deviates from the automaton - cancel generation
-            //printf("NO OUTPUTS...\n");
-            return;
-        }
-    }
-
-    if(!split_print) {
-        printf("...");
-    }
-    // We are now at a state corresponding to the final character of the prompt
-    node_t *chosen_output;
     
-    // Now we can generate the output based on the prediction
-    while(curr_state->outputs!=NULL) {
-        // Find the output state with the highest frequency
-        if(curr_state->outputs!=NULL) {
-            chosen_output = curr_output = curr_state->outputs->head;
+    // TODO:
+
+    // Traverse the model to 'play back' prompt
+        // Iterate character by character, detect deviations from the model
+        // Print `...`
+        // Clamp line length to <=38
+    // Predict based on max ASCII value
+    // Clamp line length to <=38
+    state_t *curr_state = model->ini;
+    node_t *chosen_node;
+    char comp_str[prompt_len];
+    int comp_str_len = 1, prompt_idx = 0;
+
+    
+    while(comp_str_len + prompt_idx <= prompt_len) {
+        // Copy prompt into another buffer
+        strcpy(comp_str, prompt);
+        // terminate string to be compared 
+        comp_str[comp_str_len + prompt_idx] = '\0';
+        //printf("Checking %s\n", comp_str + prompt_idx);
+        // Check if `comp_str` is a subset of any of `curr_state`s outputs
+        chosen_node = find_matching_output(curr_state, comp_str + prompt_idx);
+        // Terminate playback if mismatch is found
+        
+        if(chosen_node == NULL) {
+            //printf("MISMATCH FOUND\n");
+            printf("%s", comp_str + prompt_idx);
+            break;
         }
-        chosen_output = greatest_output(curr_output);
-        if(chosen_output == NULL) {return;}
-        // Now we have chosen the state we want to traverse to
-        curr_state = chosen_output->state;
-        printf("%s", chosen_output->str);
-        //printf("Chose output state[%d]\n", curr_state->id);
-        //printf("Does state[%d] have any outputs? %s\n", curr_state->id, curr_state->outputs!=NULL ? "yes" : "no");
+        // If `comp_str` is shorter than output str, increase length and recheck
+        if(strlen(chosen_node->str) > comp_str_len) {
+           // printf("%s is shorter than %s\n", comp_str + prompt_idx, chosen_node->str);
+            comp_str_len++;
+        } else {
+            //printf("match\n");
+            // `comp_str` matches an output of `curr_state`, traverse to it
+            printf("%s", comp_str + prompt_idx);
+            curr_state = chosen_node->state;
+            
+            prompt_idx++;
+            if(curr_state==NULL || prompt_idx >= prompt_len) {break;}
+            comp_str_len = 1;
+        }
     }
-    putchar('\n');
+    
+    // 'playback' complete
+    printf("...");
+    printf("\n");
 }
 
 /* Reads prompts from user until a blank line or EOF is read

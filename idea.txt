@@ -1,0 +1,35 @@
+while(comp_str_len + prompt_idx <= prompt_len) {
+        // Replace character swapped for terminating byte
+        comp_str[comp_str_len + prompt_idx] = prompt[comp_str_len + prompt_idx];
+        //printf("\n%s  %d\n", comp_str, comp_str_len + prompt_idx);
+        // Update `comp_str_len`
+        comp_str_len += update_comp_len;
+        prompt_idx += update_idx;
+        update_idx = 0;
+        update_comp_len = 0;
+        // terminate string to be compared 
+        comp_str[comp_str_len + prompt_idx] = '\0';
+        printf("Checking %s\n", comp_str + prompt_idx);
+        // Check if `comp_str` is a subset of any of `curr_state`s outputs
+        chosen_node = find_matching_output(curr_state, comp_str + prompt_idx);
+        // Terminate playback if mismatch is found
+        
+        if(chosen_node == NULL) {
+            printf("MISMATCH FOUND\n");
+            printf("%s", comp_str + prompt_idx);
+            break;
+        }
+        // If `comp_str` is shorter than output str, increase length and recheck
+        if(strlen(chosen_node->str) > comp_str_len) {
+            printf("shorter\n");
+            update_comp_len = 1;
+            update_idx = 0;
+        } else {
+            printf("match\n");
+            // `comp_str` matches an output of `curr_state`, traverse to it
+            printf("%s", comp_str + prompt_idx);
+            curr_state = chosen_node->state;
+            if(curr_state==NULL) {break;}
+            update_idx = 1;
+        }
+    }
