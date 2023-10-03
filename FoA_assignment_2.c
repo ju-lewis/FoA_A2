@@ -392,8 +392,6 @@ greatest_output(node_t *current_node) {
     int highest_freq = chosen_output->state->freq;
 
     while(current_node!=NULL) {
-        
-        //printf("Comparing current:%s and chosen:%s\n", current_node->str, chosen_output->str);
         if(current_node->state->freq > highest_freq) {
             // Greater frequency found
 
@@ -412,6 +410,7 @@ greatest_output(node_t *current_node) {
         // Go to next output
         current_node = current_node->next;
     }
+    //printf("Chose %s freq %d\n", chosen_output->str, chosen_output->state->freq);
     return chosen_output;
 }
 
@@ -429,7 +428,9 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
     state_t *curr_state = model->ini;
     node_t *chosen_node;
     char comp_str[prompt_len];
-    int comp_str_len = 1, prompt_idx = 0;
+    int comp_str_len = 1, prompt_idx = 0, extra_print = 1,
+        max_print_len = MAX_LINE_LEN;
+
 
     
     while(comp_str_len + prompt_idx <= prompt_len) {
@@ -437,34 +438,51 @@ make_prediction(automaton_t *model, char *prompt, int prompt_len) {
         strcpy(comp_str, prompt);
         // terminate string to be compared 
         comp_str[comp_str_len + prompt_idx] = '\0';
-        //printf("Checking %s\n", comp_str + prompt_idx);
         // Check if `comp_str` is a subset of any of `curr_state`s outputs
         chosen_node = find_matching_output(curr_state, comp_str + prompt_idx);
         // Terminate playback if mismatch is found
         
         if(chosen_node == NULL) {
-            //printf("MISMATCH FOUND\n");
             printf("%s", comp_str + prompt_idx);
+            max_print_len -= comp_str_len;
+            extra_print = 0;
             break;
         }
         // If `comp_str` is shorter than output str, increase length and recheck
         if(strlen(chosen_node->str) > comp_str_len) {
-           // printf("%s is shorter than %s\n", comp_str + prompt_idx, chosen_node->str);
+            extra_print = 1;
             comp_str_len++;
         } else {
-            //printf("match\n");
             // `comp_str` matches an output of `curr_state`, traverse to it
             printf("%s", comp_str + prompt_idx);
+            max_print_len -= comp_str_len;
             curr_state = chosen_node->state;
-            
-            prompt_idx++;
+            extra_print = 0;
+            prompt_idx += comp_str_len;
             if(curr_state==NULL || prompt_idx >= prompt_len) {break;}
             comp_str_len = 1;
         }
     }
-    
+    if(extra_print) {
+        printf("%s", comp_str + prompt_idx);
+        max_print_len -= comp_str_len;
+        printf("...");
+        max_print_len -= 3;
+        chosen_node = greatest_output(curr_state->outputs->head);
+        printf("%s", chosen_node->str + comp_str_len - 1);
+        max_print_len -= strlen(chosen_node->str + comp_str_len - 1);
+        curr_state = chosen_node->state;
+    } else {
+        printf("...");
+    }
     // 'playback' complete
-    printf("...");
+    // Now generate the completion
+    while(curr_state != NULL && curr_state->outputs!=NULL && chosen_node != NULL) {
+        chosen_node = curr_state->outputs->head;
+        chosen_node = greatest_output(chosen_node);
+        printf("%s", chosen_node->str);
+        curr_state = chosen_node->state;
+    }
     printf("\n");
 }
 
